@@ -4,7 +4,7 @@ import { ID, Query } from "node-appwrite";
 import { AppwriteException } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
-import { getEnvConfig, perms } from "@/lib/appwrite-core";
+import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import {
 	logger,
@@ -47,6 +47,21 @@ function isDocumentNotFoundError(error: unknown): boolean {
 		candidate.type === "document_not_found" ||
 		candidate.response?.status === 404
 	);
+}
+
+function isConflictError(error: unknown): boolean {
+	if (typeof error !== "object" || error === null) {
+		return false;
+	}
+
+	const candidate = error as { code?: number; message?: string };
+	if (candidate.code === 409) {
+		return true;
+	}
+
+	return typeof candidate.message === "string"
+		? candidate.message.toLowerCase().includes("already exists")
+		: false;
 }
 
 /**
@@ -161,26 +176,49 @@ export async function POST(request: NextRequest) {
 			);
 		}
 
-		// Create membership
-		const membershipPerms = perms.serverOwner(userId);
+		// Create membership without document-level permissions. Memberships are
+		// only read through server routes (API-key client), never by client SDKs.
 		const dbStartTime = Date.now();
-		const membership = await databases.createDocument(
-			env.databaseId,
-			membershipCollectionId,
-			ID.unique(),
-			{
-				serverId,
-				userId,
-				role: "member",
-			},
-			membershipPerms
-		);
+		let membership;
+		try {
+			membership = await databases.createDocument(
+				env.databaseId,
+				membershipCollectionId,
+				ID.unique(),
+				{
+					serverId,
+					userId,
+					role: "member",
+				},
+			);
+		} catch (error) {
+			// Guards against a concurrent duplicate join when the (userId,
+			// serverId) unique index rejects the second insert.
+			if (isConflictError(error)) {
+				logger.warn("User already a member (conflict)", {
+					userId,
+					serverId,
+				});
+				return NextResponse.json(
+					{ error: "You are already a member of this server" },
+					{ status: 400 },
+				);
+			}
+			throw error;
+		}
 		
 		// Assign default role to the new member
 		try {
 			await assignDefaultRoleServer(serverId, userId);
-		} catch {
-			// Non-fatal: continue even if default role assignment fails
+		} catch (defaultRoleError) {
+			logger.warn("Default role assignment failed after join", {
+				userId,
+				serverId,
+				error:
+					defaultRoleError instanceof Error
+						? defaultRoleError.message
+						: String(defaultRoleError),
+			});
 		}
 		
 		trackApiCall(
@@ -233,9 +271,17 @@ export async function POST(request: NextRequest) {
 			duration: Date.now() - startTime,
 		});
 		
+		trackApiCall(
+			"/api/servers/join",
+			"POST",
+			500,
+			Date.now() - startTime,
+			{ operation: "joinServer" }
+		);
+		
 		return NextResponse.json(
 			{
-				error: error instanceof Error ? error.message : "Failed to join server",
+				error: "Failed to join server",
 			},
 			{ status: 500 }
 		);

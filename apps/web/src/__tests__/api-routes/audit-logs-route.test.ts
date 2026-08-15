@@ -42,6 +42,8 @@ vi.mock("@/lib/appwrite-core", () => ({
             memberships: "memberships",
             roles: "roles",
             channels: "channels",
+            audit: "audit",
+            profiles: "profiles",
         },
     })),
 }));
@@ -58,9 +60,6 @@ describe("audit logs route", () => {
         mockListDocuments.mockReset();
         mockSession.mockReset();
         mockGetServerPermissionsForUser.mockReset();
-        process.env.APPWRITE_DATABASE_ID = "db";
-        process.env.APPWRITE_AUDIT_COLLECTION_ID = "audit";
-        process.env.APPWRITE_PROFILES_COLLECTION_ID = "profiles";
         mockSession.mockResolvedValue({ $id: "user-1" });
         mockGetServerPermissionsForUser.mockResolvedValue({
             isMember: true,
@@ -101,22 +100,6 @@ describe("audit logs route", () => {
         const data = await response.json();
         expect(response.status).toBe(403);
         expect(data.error).toBe("Forbidden");
-    });
-
-    it("returns 500 when audit logging is not configured", async () => {
-        process.env.APPWRITE_AUDIT_COLLECTION_ID = "";
-        const { GET } = await loadRoute();
-
-        const response = await GET(
-            new NextRequest("http://localhost/api/servers/server-1/audit-logs"),
-            {
-                params: Promise.resolve({ serverId: "server-1" }),
-            },
-        );
-
-        const data = await response.json();
-        expect(response.status).toBe(500);
-        expect(data.error).toBe("Audit logging not configured");
     });
 
     it("returns enriched audit logs", async () => {

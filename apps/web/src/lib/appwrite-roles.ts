@@ -9,11 +9,6 @@ type RoleTag = { id: string; label: string; color?: string };
 type RoleInfo = { isAdmin: boolean; isModerator: boolean };
 type ExtendedRoleInfo = RoleInfo & { tags: RoleTag[] };
 
-// Centralized environment config
-const env = getEnvConfig();
-const adminTeamId = env.teams.adminTeamId || undefined;
-const moderatorTeamId = env.teams.moderatorTeamId || undefined;
-
 // Optional explicit user ID overrides (comma separated) – useful for bootstrap/dev.
 // Parse these at call time so tests can override them
 /**
@@ -132,6 +127,11 @@ export async function getUserRoles(userId: string | null): Promise<RoleInfo> {
 
     const teams = selectTeamsClient();
 
+    // Resolve team IDs at call time so resetEnvCache() takes effect on later calls.
+    const env = getEnvConfig();
+    const adminTeamId = env.teams.adminTeamId || undefined;
+    const moderatorTeamId = env.teams.moderatorTeamId || undefined;
+
     let isAdmin = overrideAdmin;
     let isModerator = overrideModerator;
 
@@ -168,10 +168,29 @@ function loadTeamMap() {
 
     try {
         if (raw) {
-            parsedTeamMap = JSON.parse(raw) as Record<
+            const parsed = JSON.parse(raw) as Record<
                 string,
-                { label: string; color?: string }
+                { label?: unknown; color?: unknown }
             >;
+            parsedTeamMap = {};
+            for (const [teamId, value] of Object.entries(parsed)) {
+                if (!value || typeof value !== "object") {
+                    continue;
+                }
+                const entry = value as { label?: unknown; color?: unknown };
+                if (
+                    typeof entry.label !== "string" ||
+                    entry.label.trim().length === 0
+                ) {
+                    continue;
+                }
+                parsedTeamMap[teamId] = {
+                    label: entry.label,
+                    ...(typeof entry.color === "string"
+                        ? { color: entry.color }
+                        : {}),
+                };
+            }
         } else {
             parsedTeamMap = {};
         }
@@ -278,14 +297,15 @@ async function fetchCustomTeamTags(
  * @returns {RoleTag[]} The return value.
  */
 function appendImplicitTags(base: RoleInfo, tags: RoleTag[]): RoleTag[] {
-    const lowered = tags.map((t) => t.label.toLowerCase());
-    if (base.isAdmin && !lowered.includes("admin")) {
-        tags.push({ id: "__admin", label: "Admin", color: "bg-red-600" });
+    const lowered = new Set(tags.map((t) => t.label.toLowerCase()));
+    const result = [...tags];
+    if (base.isAdmin && !lowered.has("admin")) {
+        result.push({ id: "__admin", label: "Admin", color: "bg-red-600" });
     }
-    if (base.isModerator && !lowered.includes("mod")) {
-        tags.push({ id: "__mod", label: "Mod", color: "bg-amber-600" });
+    if (base.isModerator && !lowered.has("mod")) {
+        result.push({ id: "__mod", label: "Mod", color: "bg-amber-600" });
     }
-    return tags;
+    return result;
 }
 
 const ROLE_TAG_CACHE_TTL_MS = 60_000; // 60s
@@ -299,16 +319,16 @@ const ROLE_TAG_CACHE_TTL_MS = 60_000; // 60s
 export async function getUserRoleTags(
     userId: string | null,
 ): Promise<ExtendedRoleInfo> {
-    const base = await getUserRoles(userId);
     if (!userId) {
-        return { ...base, tags: [] };
+        return { isAdmin: false, isModerator: false, tags: [] };
     }
-    // Teams client can still operate even if server key missing; tags will just be empty on failures.
     const now = Date.now();
     const hit = cacheHit(userId, now);
     if (hit) {
         return hit;
     }
+    // Teams client can still operate even if server key missing; tags will just be empty on failures.
+    const base = await getUserRoles(userId);
     const teamMap = loadTeamMap();
     const teams = selectTeamsClient();
     const customTags = await fetchCustomTeamTags(userId, teams, teamMap);

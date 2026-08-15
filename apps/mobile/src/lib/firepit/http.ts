@@ -2,6 +2,28 @@ type QueryValue = string | number | boolean | null | undefined;
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+type RequestHealthListener = () => void;
+
+const recoveredListeners = new Set<RequestHealthListener>();
+let requestDegraded = false;
+
+export function reportRequestFailure(): void {
+  requestDegraded = true;
+}
+
+export function reportRequestSuccess(): void {
+  if (!requestDegraded) return;
+  requestDegraded = false;
+  recoveredListeners.forEach((listener) => listener());
+}
+
+export function onRequestRecovered(listener: RequestHealthListener): () => void {
+  recoveredListeners.add(listener);
+  return () => {
+    recoveredListeners.delete(listener);
+  };
+}
+
 export class FirepitHttpError extends Error {
   status: number;
   payload: unknown;
@@ -133,12 +155,18 @@ export async function firepitRequest<T>({
         throw new FirepitHttpError(message, response.status, payload);
       }
 
+      reportRequestSuccess();
       return payload as T;
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         if (attempt < attempts) continue;
+        reportRequestFailure();
         throw new Error(`Request timed out after ${timeoutMs}ms: ${path}`);
       }
+      if (error instanceof FirepitHttpError) {
+        throw error;
+      }
+      reportRequestFailure();
       throw error;
     } finally {
       clearTimeout(timer);

@@ -1,14 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/contexts/auth-context";
 import type { RelationshipStatus } from "@/lib/types";
-
-type RelationshipResponse = {
-    relationship?: RelationshipStatus;
-    error?: string;
-};
 
 export function useRelationship(targetUserId: string | null) {
     const { userData } = useAuth();
@@ -20,6 +15,7 @@ export function useRelationship(targetUserId: string | null) {
     const [loading, setLoading] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const requestIdRef = useRef(0);
 
     const refetch = useCallback(async () => {
         if (!targetUserId || !currentUserId || isSelf) {
@@ -27,27 +23,39 @@ export function useRelationship(targetUserId: string | null) {
             return;
         }
 
+        const requestId = ++requestIdRef.current;
         setLoading(true);
         setError(null);
         try {
             const response = await fetch(
                 `/api/users/${targetUserId}/relationship`,
             );
-            const data = (await response.json()) as RelationshipResponse;
+            const data = (await response.json()) as {
+                relationship?: RelationshipStatus;
+                error?: string;
+            };
 
             if (!response.ok) {
                 throw new Error(data.error || "Failed to load relationship");
             }
 
+            if (requestIdRef.current !== requestId) {
+                return;
+            }
             setRelationship(data.relationship ?? null);
         } catch (fetchError) {
+            if (requestIdRef.current !== requestId) {
+                return;
+            }
             setError(
                 fetchError instanceof Error
                     ? fetchError.message
                     : "Failed to load relationship",
             );
         } finally {
-            setLoading(false);
+            if (requestIdRef.current === requestId) {
+                setLoading(false);
+            }
         }
     }, [currentUserId, isSelf, targetUserId]);
 
@@ -76,7 +84,9 @@ export function useRelationship(targetUserId: string | null) {
                 };
 
                 if (!response.ok) {
-                    throw new Error(data.error || "Relationship action failed");
+                    throw new Error(
+                        data.error || "Relationship action failed",
+                    );
                 }
 
                 await refetch();
@@ -95,6 +105,8 @@ export function useRelationship(targetUserId: string | null) {
         [refetch],
     );
 
+    const canMutate = targetUserId !== null && !isSelf;
+
     return {
         relationship,
         loading,
@@ -103,7 +115,7 @@ export function useRelationship(targetUserId: string | null) {
         isSelf,
         refetch,
         sendFriendRequest: () =>
-            targetUserId
+            canMutate
                 ? runMutation({
                       url: "/api/friends/request",
                       method: "POST",
@@ -111,28 +123,28 @@ export function useRelationship(targetUserId: string | null) {
                   })
                 : Promise.resolve(false),
         acceptFriendRequest: () =>
-            targetUserId
+            canMutate
                 ? runMutation({
                       url: `/api/friends/${targetUserId}/accept`,
                       method: "POST",
                   })
                 : Promise.resolve(false),
         declineFriendRequest: () =>
-            targetUserId
+            canMutate
                 ? runMutation({
                       url: `/api/friends/${targetUserId}/decline`,
                       method: "POST",
                   })
                 : Promise.resolve(false),
         removeFriendship: () =>
-            targetUserId
+            canMutate
                 ? runMutation({
                       url: `/api/friends/${targetUserId}`,
                       method: "DELETE",
                   })
                 : Promise.resolve(false),
         blockUser: (reason?: string) =>
-            targetUserId
+            canMutate
                 ? runMutation({
                       url: `/api/users/${targetUserId}/block`,
                       method: "POST",
@@ -140,7 +152,7 @@ export function useRelationship(targetUserId: string | null) {
                   })
                 : Promise.resolve(false),
         unblockUser: () =>
-            targetUserId
+            canMutate
                 ? runMutation({
                       url: `/api/users/${targetUserId}/block`,
                       method: "DELETE",

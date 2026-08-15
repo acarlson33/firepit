@@ -187,6 +187,14 @@ export async function proxy(request: NextRequest) {
         return NextResponse.redirect(loginUrl);
     }
 
+    // Redirect authenticated users away from auth routes to home (or their redirect param)
+    if ((pathname === "/login" || pathname === "/register") && hasSession) {
+        const redirect = request.nextUrl.searchParams.get("redirect");
+        const destination =
+            redirect && /^\/(?!\/)/.test(redirect) ? redirect : "/";
+        return NextResponse.redirect(new URL(destination, request.url));
+    }
+
     return NextResponse.next();
 }
 

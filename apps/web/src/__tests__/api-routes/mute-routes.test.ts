@@ -12,6 +12,8 @@ const {
   mockUnmuteChannel,
   mockMuteConversation,
   mockUnmuteConversation,
+  mockGetServerPermissionsForUser,
+  mockGetDocument,
 } = vi.hoisted(() => ({
   mockSession: vi.fn(),
   mockMuteServer: vi.fn(),
@@ -20,9 +22,31 @@ const {
   mockUnmuteChannel: vi.fn(),
   mockMuteConversation: vi.fn(),
   mockUnmuteConversation: vi.fn(),
+  mockGetServerPermissionsForUser: vi.fn(),
+  mockGetDocument: vi.fn(),
 }));
 
 vi.mock("@/lib/auth-server", () => ({ getServerSession: mockSession }));
+
+vi.mock("@/lib/server-channel-access", () => ({
+  getServerPermissionsForUser: mockGetServerPermissionsForUser,
+}));
+
+vi.mock("@/lib/appwrite-server", () => ({
+  getServerClient: vi.fn(() => ({
+    databases: { getDocument: mockGetDocument },
+  })),
+}));
+
+vi.mock("@/lib/appwrite-core", () => ({
+  getEnvConfig: vi.fn(() => ({
+    databaseId: "test-db",
+    collections: {
+      channels: "channels-collection",
+      conversations: "conversations-collection",
+    },
+  })),
+}));
 
 vi.mock("@/lib/notification-settings", () => ({
   muteServer: mockMuteServer,
@@ -31,6 +55,8 @@ vi.mock("@/lib/notification-settings", () => ({
   unmuteChannel: mockUnmuteChannel,
   muteConversation: mockMuteConversation,
   unmuteConversation: mockUnmuteConversation,
+  isMuteExpired: (mutedUntil?: string) =>
+    mutedUntil ? Date.parse(mutedUntil) <= Date.now() : false,
 }));
 
 describe("Mute routes", () => {
@@ -42,6 +68,13 @@ describe("Mute routes", () => {
     mockUnmuteChannel.mockReset();
     mockMuteConversation.mockReset();
     mockUnmuteConversation.mockReset();
+    mockGetServerPermissionsForUser.mockReset();
+    mockGetServerPermissionsForUser.mockResolvedValue({
+      isMember: true,
+      isServerOwner: false,
+      permissions: {},
+    });
+    mockGetDocument.mockReset();
   });
 
   it("returns 401 when unauthenticated for server mute", async () => {
@@ -59,6 +92,28 @@ describe("Mute routes", () => {
     const data = await response.json();
     expect(response.status).toBe(401);
     expect(data.error).toBe("Authentication required");
+  });
+
+  it("returns 403 when not a member of the server", async () => {
+    mockSession.mockResolvedValue({ $id: "user-1" });
+    mockGetServerPermissionsForUser.mockResolvedValue({
+      isMember: false,
+      isServerOwner: false,
+      permissions: {},
+    });
+
+    const request = new NextRequest("http://localhost/api/servers/server-1/mute", {
+      method: "POST",
+      body: JSON.stringify({ muted: true }),
+    });
+
+    const response = await postServerMute(request, {
+      params: Promise.resolve({ serverId: "server-1" }),
+    });
+
+    const data = await response.json();
+    expect(response.status).toBe(403);
+    expect(mockMuteServer).not.toHaveBeenCalled();
   });
 
   it("validates duration for server mute", async () => {
@@ -83,7 +138,10 @@ describe("Mute routes", () => {
     mockSession.mockResolvedValue({ $id: "user-1" });
     mockMuteServer.mockResolvedValue({
       serverOverrides: {
-        "server-1": { mutedUntil: "later", level: "mentions" },
+        "server-1": {
+          mutedUntil: new Date(Date.now() + 3600000).toISOString(),
+          level: "mentions",
+        },
       },
     });
 
@@ -124,6 +182,10 @@ describe("Mute routes", () => {
 
   it("mutes a channel", async () => {
     mockSession.mockResolvedValue({ $id: "user-1" });
+    mockGetDocument.mockResolvedValue({
+      $id: "channel-1",
+      serverId: "server-1",
+    });
     mockMuteChannel.mockResolvedValue({
       channelOverrides: { "channel-1": { mutedUntil: "soon", level: "nothing" } },
     });
@@ -145,6 +207,10 @@ describe("Mute routes", () => {
 
   it("unmutes a conversation", async () => {
     mockSession.mockResolvedValue({ $id: "user-1" });
+    mockGetDocument.mockResolvedValue({
+      $id: "convo-1",
+      participants: ["user-1", "user-2"],
+    });
     mockUnmuteConversation.mockResolvedValue({ conversationOverrides: {} });
 
     const request = new NextRequest("http://localhost/api/conversations/convo-1/mute", {

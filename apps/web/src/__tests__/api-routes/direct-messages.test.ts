@@ -25,6 +25,8 @@ const {
     mockGetNotificationSettings,
     mockGetOrCreateNotificationSettings,
     mockGetUserProfile,
+    mockGetUserProfilesBatch,
+    mockGetAvatarUrl,
     mockUpsertMentionInboxItems,
     mockListThreadReadsByContext,
     mockIsThreadUnread,
@@ -40,6 +42,8 @@ const {
     mockGetNotificationSettings: vi.fn(),
     mockGetOrCreateNotificationSettings: vi.fn(),
     mockGetUserProfile: vi.fn(),
+    mockGetUserProfilesBatch: vi.fn(),
+    mockGetAvatarUrl: vi.fn(),
     mockUpsertMentionInboxItems: vi.fn(),
     mockListThreadReadsByContext: vi.fn(),
     mockIsThreadUnread: vi.fn(),
@@ -83,6 +87,8 @@ vi.mock("@/lib/appwrite-core", () => ({
 }));
 
 vi.mock("@/lib/newrelic-utils", () => ({
+    returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+    returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
     logger: {
         info: vi.fn(),
         warn: vi.fn(),
@@ -108,6 +114,8 @@ vi.mock("@/lib/notification-settings", () => ({
 
 vi.mock("@/lib/appwrite-profiles", () => ({
     getUserProfile: mockGetUserProfile,
+    getUserProfilesBatch: mockGetUserProfilesBatch,
+    getAvatarUrl: mockGetAvatarUrl,
 }));
 
 vi.mock("@/lib/inbox-items", () => ({
@@ -115,7 +123,21 @@ vi.mock("@/lib/inbox-items", () => ({
 }));
 
 vi.mock("@/lib/thread-read-store", () => ({
+    CONCURRENT_DOCUMENT_QUERIES: 4,
     listThreadReadsByContext: mockListThreadReadsByContext,
+    runInBatches: async <T>(params: {
+        batchSize: number;
+        items: T[];
+        worker: (item: T) => Promise<void>;
+    }) => {
+        for (let index = 0; index < params.items.length; index += params.batchSize) {
+            await Promise.all(
+                params.items
+                    .slice(index, index + params.batchSize)
+                    .map((item) => params.worker(item)),
+            );
+        }
+    },
 }));
 
 vi.mock("@/lib/thread-read-states", () => ({
@@ -198,6 +220,7 @@ describe("Direct Messages API", () => {
                 dmEncryptionEnabled: false,
             });
             mockGetUserProfile.mockResolvedValue(null);
+            mockGetUserProfilesBatch.mockResolvedValue(new Map());
 
         // Dynamically import the route handlers
         const module = await import("../../app/api/direct-messages/route");

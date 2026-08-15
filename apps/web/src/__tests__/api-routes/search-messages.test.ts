@@ -41,7 +41,25 @@ vi.mock("@/lib/appwrite-core", () => ({
             messages: "messages-collection",
             directMessages: "direct-messages-collection",
             profiles: "profiles-collection",
+            memberships: "memberships-collection",
+            channels: "channels-collection",
         },
+    })),
+}));
+
+vi.mock("@/lib/server-channel-access", () => ({
+    getServerPermissionsForUser: vi.fn(async () => ({
+        isMember: true,
+        isServerOwner: false,
+        permissions: {
+            readMessages: true,
+            administrator: false,
+        },
+        roleIds: [],
+        roles: [],
+    })),
+    getChannelAccessForUser: vi.fn(async () => ({
+        canRead: true,
     })),
 }));
 
@@ -57,6 +75,9 @@ vi.mock("@/lib/appwrite-profiles", () => ({
     getAvatarUrl: vi.fn(
         (fileId: string) => `http://localhost/avatar/${fileId}`,
     ),
+    resolveProfileUserId: vi.fn(async (identifier: string) =>
+        identifier === "alice" ? "user-1" : undefined,
+    ),
 }));
 
 vi.mock("@/lib/appwrite-friendships", () => ({
@@ -64,6 +85,8 @@ vi.mock("@/lib/appwrite-friendships", () => ({
 }));
 
 vi.mock("@/lib/newrelic-utils", () => ({
+    returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+    returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
     logger: {
         warn: vi.fn(),
         info: vi.fn(),
@@ -93,8 +116,34 @@ describe("Message Search API Route", () => {
         );
     });
 
+    // Queue membership + channel documents so getAccessibleChannelIds
+    // resolves one readable channel ("channel-1") for the current user.
+    const mockAccessibleChannelSetup = () => {
+        mockDatabases.listDocuments
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        $id: "membership-1",
+                        serverId: "server-1",
+                        userId: "current-user-123",
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                documents: [{ $id: "channel-1", type: "text" }],
+            });
+    };
+
+    // Queue an empty memberships result so no channels are searchable.
+    const mockNoAccessibleChannels = () => {
+        mockDatabases.listDocuments.mockResolvedValueOnce({
+            documents: [],
+        });
+    };
+
     describe("GET /api/search/messages", () => {
         it("should search messages by text", async () => {
+            mockAccessibleChannelSetup();
             mockDatabases.listDocuments
                 .mockResolvedValueOnce({
                     documents: [
@@ -135,10 +184,8 @@ describe("Message Search API Route", () => {
         });
 
         it("should search DMs when no channel filter", async () => {
+            mockNoAccessibleChannels();
             mockDatabases.listDocuments
-                .mockResolvedValueOnce({
-                    documents: [],
-                })
                 .mockResolvedValueOnce({
                     documents: [
                         {
@@ -209,6 +256,7 @@ describe("Message Search API Route", () => {
         });
 
         it("should parse filter syntax from:@username", async () => {
+            mockAccessibleChannelSetup();
             mockDatabases.listDocuments
                 .mockResolvedValueOnce({
                     documents: [],
@@ -231,10 +279,24 @@ describe("Message Search API Route", () => {
                 expect.anything(),
                 expect.anything(),
                 expect.arrayContaining([
-                    expect.stringContaining("equal(userId,alice)"),
+                    expect.stringContaining("equal(userId,user-1)"),
                     expect.stringContaining("search(text,test)"),
                 ]),
             );
+        });
+
+        it("should return 400 if from: username is unknown", async () => {
+            mockAccessibleChannelSetup();
+
+            const request = new NextRequest(
+                "http://localhost/api/search/messages?q=from:ghost%20test",
+            );
+
+            const response = await GET(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(400);
+            expect(data.error).toBe("Unknown user: ghost");
         });
 
         it("should parse filter syntax in:#channel", async () => {
@@ -263,6 +325,7 @@ describe("Message Search API Route", () => {
         });
 
         it("should parse filter syntax has:image", async () => {
+            mockAccessibleChannelSetup();
             mockDatabases.listDocuments
                 .mockResolvedValueOnce({
                     documents: [],
@@ -291,6 +354,7 @@ describe("Message Search API Route", () => {
         });
 
         it("should parse filter syntax mentions:me", async () => {
+            mockAccessibleChannelSetup();
             mockDatabases.listDocuments
                 .mockResolvedValueOnce({
                     documents: [],
@@ -321,6 +385,7 @@ describe("Message Search API Route", () => {
         });
 
         it("should parse filter syntax before:YYYY-MM-DD", async () => {
+            mockAccessibleChannelSetup();
             mockDatabases.listDocuments
                 .mockResolvedValueOnce({
                     documents: [],
@@ -351,6 +416,7 @@ describe("Message Search API Route", () => {
         });
 
         it("should parse filter syntax after:YYYY-MM-DD", async () => {
+            mockAccessibleChannelSetup();
             mockDatabases.listDocuments
                 .mockResolvedValueOnce({
                     documents: [],
@@ -424,6 +490,7 @@ describe("Message Search API Route", () => {
         });
 
         it("should sort results by date descending", async () => {
+            mockAccessibleChannelSetup();
             mockDatabases.listDocuments
                 .mockResolvedValueOnce({
                     documents: [
@@ -484,6 +551,7 @@ describe("Message Search API Route", () => {
                 channelId: "channel-1",
             }));
 
+            mockAccessibleChannelSetup();
             mockDatabases.listDocuments
                 .mockResolvedValueOnce({
                     documents: manyMessages,
@@ -512,6 +580,7 @@ describe("Message Search API Route", () => {
         });
 
         it("should filter blocked senders from search results", async () => {
+            mockAccessibleChannelSetup();
             mockDatabases.listDocuments
                 .mockResolvedValueOnce({
                     documents: [

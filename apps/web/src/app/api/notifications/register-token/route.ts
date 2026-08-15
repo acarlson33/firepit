@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { Query } from "node-appwrite";
+import { ID, Query } from "node-appwrite";
+import Expo from "expo-server-sdk";
 
 import { getServerSession } from "@/lib/auth-server";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { returnUnauthorized } from "@/lib/newrelic-utils";
-
-const PUSH_TOKENS_COLLECTION = "push_tokens";
+import { logger, returnUnauthorized } from "@/lib/newrelic-utils";
 
 /**
  * POST /api/notifications/register-token
@@ -31,33 +30,54 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        if (!Expo.isExpoPushToken(token)) {
+            return NextResponse.json(
+                { error: "token is not a valid Expo push token" },
+                { status: 400 },
+            );
+        }
+
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        // Check if this exact token already exists for this user
-        const existing = await databases.listDocuments(
+        // Look up every document that holds this token so a stale owner's
+        // record is removed before registering it for the current user.
+        const byToken = await databases.listDocuments(
             env.databaseId,
-            PUSH_TOKENS_COLLECTION,
-            [
-                Query.equal("userId", session.$id),
-                Query.equal("token", token),
-            ],
+            env.collections.pushTokens,
+            [Query.equal("token", token)],
         );
 
-        if (existing.documents.length > 0) {
-            // Token already registered — just touch the updatedAt
+        const ownedDocuments = byToken.documents.filter(
+            (doc) => doc.userId === session.$id,
+        );
+
+        for (const doc of byToken.documents) {
+            if (doc.userId !== session.$id) {
+                await databases
+                    .deleteDocument(
+                        env.databaseId,
+                        env.collections.pushTokens,
+                        doc.$id,
+                    )
+                    .catch(() => undefined);
+            }
+        }
+
+        if (ownedDocuments.length > 0) {
+            // Token already registered for this user — just touch the updatedAt
             await databases.updateDocument(
                 env.databaseId,
-                PUSH_TOKENS_COLLECTION,
-                existing.documents[0].$id,
+                env.collections.pushTokens,
+                ownedDocuments[0].$id,
                 { updatedAt: new Date().toISOString() },
             );
         } else {
             // New token — create it
             await databases.createDocument(
                 env.databaseId,
-                PUSH_TOKENS_COLLECTION,
-                "unique()",
+                env.collections.pushTokens,
+                ID.unique(),
                 {
                     userId: session.$id,
                     token,
@@ -69,7 +89,9 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("[push] Token registration failed:", error);
+        logger.error("[push] Token registration failed", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to register token" },
             { status: 500 },

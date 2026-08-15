@@ -142,6 +142,10 @@ describe("Pin route", () => {
     it("POST blocks when pin limit reached", async () => {
         mockGetDocument.mockResolvedValue(baseMessage);
         mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [{ roleIds: ["role-1"] }],
+            })
+            .mockResolvedValueOnce({ documents: [] })
             .mockResolvedValueOnce({ total: 0, documents: [] })
             .mockResolvedValueOnce({ total: 50, documents: [] });
 
@@ -161,10 +165,12 @@ describe("Pin route", () => {
 
     it("DELETE unpins message", async () => {
         mockGetDocument.mockResolvedValue(baseMessage);
-        mockListDocuments.mockResolvedValue({
-            total: 1,
-            documents: [{ $id: "pin-1" }],
-        });
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [{ roleIds: ["role-1"] }],
+            })
+            .mockResolvedValueOnce({ documents: [] })
+            .mockResolvedValue({ total: 1, documents: [{ $id: "pin-1" }] });
 
         const request = new NextRequest(
             "http://localhost/api/messages/msg-1/pin",

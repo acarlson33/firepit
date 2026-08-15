@@ -5,7 +5,7 @@ import { ID, Query } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
-import { returnUnauthorized, returnForbidden } from "@/lib/newrelic-utils";
+import { returnForbidden, logger } from "@/lib/newrelic-utils";
 import type { DirectMessage, PinnedMessage } from "@/lib/types";
 
 const PIN_LIMIT = 50;
@@ -118,13 +118,11 @@ export async function POST(_request: NextRequest, context: RouteContext) {
 
         return NextResponse.json({ pin: created });
     } catch (error) {
+        logger.error("Failed to pin message", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to pin message",
-            },
+            { error: "Failed to pin message" },
             { status: 500 },
         );
     }
@@ -189,13 +187,11 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
 
         return NextResponse.json({ success: true });
     } catch (error) {
+        logger.error("Failed to unpin message", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to unpin message",
-            },
+            { error: "Failed to unpin message" },
             { status: 500 },
         );
     }

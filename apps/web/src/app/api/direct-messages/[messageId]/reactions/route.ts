@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import type { Databases } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
-import { getEnvConfig } from "@/lib/appwrite-core";
+import { getEnvConfig, type EnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import type { DirectMessage } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
@@ -12,8 +13,6 @@ import {
     setTransactionName,
     trackApiCall,
     addTransactionAttributes,
-    returnUnauthorized,
-    returnForbidden,
 } from "@/lib/newrelic-utils";
 
 type RouteContext = {
@@ -21,6 +20,38 @@ type RouteContext = {
         messageId: string;
     }>;
 };
+
+async function resolveDmParticipants(
+    databases: Databases,
+    env: EnvConfig,
+    message: DirectMessage,
+): Promise<string[]> {
+    if (message.conversationId) {
+        try {
+            const conversation = await databases.getDocument(
+                env.databaseId,
+                env.collections.conversations,
+                message.conversationId,
+            );
+            const conversationParticipants = Array.isArray(
+                conversation.participants,
+            )
+                ? (conversation.participants as string[])
+                : [];
+            if (conversationParticipants.length > 0) {
+                return conversationParticipants;
+            }
+        } catch {
+            // Fall back to sender/receiver when the conversation cannot be fetched
+        }
+    }
+
+    return Array.from(
+        new Set(
+            [message.senderId, message.receiverId].filter(Boolean) as string[],
+        ),
+    );
+}
 
 /**
  * POST /api/direct-messages/[messageId]/reactions
@@ -62,89 +93,91 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        const message = (await databases.getDocument(
-            env.databaseId,
-            env.collections.directMessages,
-            messageId,
-        )) as unknown as DirectMessage;
+        const maxUpdateAttempts = 3;
+        let updatedMessage: DirectMessage | null = null;
 
-        let participants: string[] = [];
-        if (message.conversationId) {
-            try {
-                const conversation = await databases.getDocument(
-                    env.databaseId,
-                    env.collections.conversations,
-                    message.conversationId,
+        for (let attempt = 0; attempt < maxUpdateAttempts; attempt += 1) {
+            const message = (await databases.getDocument(
+                env.databaseId,
+                env.collections.directMessages,
+                messageId,
+            )) as unknown as DirectMessage;
+
+            const participants = await resolveDmParticipants(
+                databases,
+                env,
+                message,
+            );
+            if (!participants.includes(user.$id)) {
+                return NextResponse.json(
+                    { error: "Unauthorized" },
+                    { status: 403 },
                 );
-                const conversationParticipants = Array.isArray(
-                    conversation.participants,
-                )
-                    ? (conversation.participants as string[])
-                    : [];
-                if (conversationParticipants.length > 0) {
-                    participants = conversationParticipants;
-                }
-            } catch {
-                // Fall back to sender/receiver when the conversation cannot be fetched
             }
-        }
 
-        if (participants.length === 0) {
-            participants = Array.from(
-                new Set(
-                    [message.senderId, message.receiverId].filter(
-                        Boolean,
-                    ) as string[],
-                ),
-            );
-        }
+            const reactions = parseReactions(message.reactions);
 
-        if (!participants.includes(user.$id)) {
-            return NextResponse.json(
-                { error: "Unauthorized" },
-                { status: 403 },
-            );
-        }
+            // Find existing reaction for this emoji
+            const existingReaction = reactions.find((r) => r.emoji === emoji);
+            if (existingReaction) {
+                // Check if user already reacted with this emoji
+                if (existingReaction.userIds.includes(user.$id)) {
+                    logger.info("User already reacted with this emoji", {
+                        messageId,
+                        userId: user.$id,
+                        emoji,
+                    });
+                    return NextResponse.json(
+                        { error: "You already reacted with this emoji" },
+                        { status: 400 },
+                    );
+                }
 
-        const reactions = parseReactions(message.reactions);
+                // Add user to existing reaction
+                existingReaction.userIds.push(user.$id);
+                existingReaction.count = existingReaction.userIds.length;
+            } else {
+                // Create new reaction
+                reactions.push({
+                    emoji,
+                    userIds: [user.$id],
+                    count: 1,
+                });
+            }
 
-        // Find existing reaction for this emoji
-        const existingReaction = reactions.find((r) => r.emoji === emoji);
-        if (existingReaction) {
-            // Check if user already reacted with this emoji
-            if (existingReaction.userIds.includes(user.$id)) {
-                logger.info("User already reacted with this emoji", {
+            // Update the message with new reactions
+            try {
+                updatedMessage = (await databases.updateDocument(
+                    env.databaseId,
+                    env.collections.directMessages,
                     messageId,
-                    userId: user.$id,
+                    {
+                        reactions: JSON.stringify(reactions),
+                    },
+                )) as unknown as DirectMessage;
+                break;
+            } catch (updateError) {
+                const isConflict =
+                    !!updateError &&
+                    typeof updateError === "object" &&
+                    (updateError as { code?: unknown }).code === 409;
+                if (!isConflict) {
+                    throw updateError;
+                }
+                logger.warn("DM reaction update conflict, retrying", {
+                    attempt: attempt + 1,
+                    messageId,
                     emoji,
                 });
-                return NextResponse.json(
-                    { error: "You already reacted with this emoji" },
-                    { status: 400 },
-                );
             }
-
-            // Add user to existing reaction
-            existingReaction.userIds.push(user.$id);
-            existingReaction.count = existingReaction.userIds.length;
-        } else {
-            // Create new reaction
-            reactions.push({
-                emoji,
-                userIds: [user.$id],
-                count: 1,
-            });
         }
 
-        // Update the message with new reactions
-        const updatedMessage = (await databases.updateDocument(
-            env.databaseId,
-            env.collections.directMessages,
-            messageId,
-            {
-                reactions: JSON.stringify(reactions),
-            },
-        )) as unknown as DirectMessage;
+        if (!updatedMessage) {
+            return NextResponse.json(
+                { error: "Failed to add reaction" },
+                { status: 500 },
+            );
+        }
 
         const duration = Date.now() - startTime;
         trackApiCall(
@@ -158,7 +191,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             messageId,
             userId: user.$id,
             emoji,
-            totalReactions: reactions.length,
+            totalReactions: parseReactions(updatedMessage.reactions).length,
         });
 
         return NextResponse.json({
@@ -228,104 +261,106 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        const message = (await databases.getDocument(
-            env.databaseId,
-            env.collections.directMessages,
-            messageId,
-        )) as unknown as DirectMessage;
+        const maxUpdateAttempts = 3;
+        let updatedMessage: DirectMessage | null = null;
 
-        let participants: string[] = [];
-        if (message.conversationId) {
-            try {
-                const conversation = await databases.getDocument(
-                    env.databaseId,
-                    env.collections.conversations,
-                    message.conversationId,
+        for (let attempt = 0; attempt < maxUpdateAttempts; attempt += 1) {
+            const message = (await databases.getDocument(
+                env.databaseId,
+                env.collections.directMessages,
+                messageId,
+            )) as unknown as DirectMessage;
+
+            const participants = await resolveDmParticipants(
+                databases,
+                env,
+                message,
+            );
+            if (!participants.includes(user.$id)) {
+                logger.warn("User not authorized for this DM", {
+                    messageId,
+                    userId: user.$id,
+                });
+                return NextResponse.json(
+                    { error: "Not authorized" },
+                    { status: 403 },
                 );
-                const conversationParticipants = Array.isArray(
-                    conversation.participants,
-                )
-                    ? (conversation.participants as string[])
-                    : [];
-                if (conversationParticipants.length > 0) {
-                    participants = conversationParticipants;
+            }
+
+            let reactions = parseReactions(message.reactions);
+
+            // Find existing reaction for this emoji
+            const existingReaction = reactions.find((r) => r.emoji === emoji);
+
+            if (!existingReaction) {
+                logger.info("DM reaction not found", {
+                    messageId,
+                    userId: user.$id,
+                    emoji,
+                });
+                return NextResponse.json(
+                    { error: "Reaction not found" },
+                    { status: 404 },
+                );
+            }
+
+            // Check if user has reacted with this emoji
+            if (!existingReaction.userIds.includes(user.$id)) {
+                logger.info("User has not reacted with this emoji", {
+                    messageId,
+                    userId: user.$id,
+                    emoji,
+                });
+                return NextResponse.json(
+                    { error: "You have not reacted with this emoji" },
+                    { status: 400 },
+                );
+            }
+
+            // Remove user from reaction
+            existingReaction.userIds = existingReaction.userIds.filter(
+                (id) => id !== user.$id,
+            );
+            existingReaction.count = existingReaction.userIds.length;
+
+            // If no users left, remove the entire reaction
+            if (existingReaction.count === 0) {
+                reactions = reactions.filter((r) => r.emoji !== emoji);
+            }
+
+            // Update the message with new reactions
+            try {
+                updatedMessage = (await databases.updateDocument(
+                    env.databaseId,
+                    env.collections.directMessages,
+                    messageId,
+                    {
+                        reactions: JSON.stringify(reactions),
+                    },
+                )) as unknown as DirectMessage;
+                break;
+            } catch (updateError) {
+                const isConflict =
+                    !!updateError &&
+                    typeof updateError === "object" &&
+                    (updateError as { code?: unknown }).code === 409;
+                if (!isConflict) {
+                    throw updateError;
                 }
-            } catch {
-                // Fall back to sender/receiver when the conversation cannot be fetched
+                logger.warn("DM reaction update conflict, retrying", {
+                    attempt: attempt + 1,
+                    messageId,
+                    emoji,
+                });
             }
         }
 
-        if (participants.length === 0) {
-            participants = Array.from(
-                new Set(
-                    [message.senderId, message.receiverId].filter(
-                        Boolean,
-                    ) as string[],
-                ),
-            );
-        }
-
-        if (!participants.includes(user.$id)) {
-            logger.warn("User not authorized for this DM", {
-                messageId,
-                userId: user.$id,
-            });
+        if (!updatedMessage) {
             return NextResponse.json(
-                { error: "Not authorized" },
-                { status: 403 },
+                { error: "Failed to remove reaction" },
+                { status: 500 },
             );
         }
-
-        let reactions = parseReactions(message.reactions);
-
-        // Find existing reaction for this emoji
-        const existingReaction = reactions.find((r) => r.emoji === emoji);
-
-        if (!existingReaction) {
-            logger.info("DM reaction not found", {
-                messageId,
-                userId: user.$id,
-                emoji,
-            });
-            return NextResponse.json(
-                { error: "Reaction not found" },
-                { status: 404 },
-            );
-        }
-
-        // Check if user has reacted with this emoji
-        if (!existingReaction.userIds.includes(user.$id)) {
-            logger.info("User has not reacted with this emoji", {
-                messageId,
-                userId: user.$id,
-                emoji,
-            });
-            return NextResponse.json(
-                { error: "You have not reacted with this emoji" },
-                { status: 400 },
-            );
-        }
-
-        // Remove user from reaction
-        existingReaction.userIds = existingReaction.userIds.filter(
-            (id) => id !== user.$id,
-        );
-        existingReaction.count = existingReaction.userIds.length;
-
-        // If no users left, remove the entire reaction
-        if (existingReaction.count === 0) {
-            reactions = reactions.filter((r) => r.emoji !== emoji);
-        }
-
-        // Update the message with new reactions
-        const updatedMessage = (await databases.updateDocument(
-            env.databaseId,
-            env.collections.directMessages,
-            messageId,
-            {
-                reactions: JSON.stringify(reactions),
-            },
-        )) as unknown as DirectMessage;
 
         const duration = Date.now() - startTime;
         trackApiCall(
@@ -339,7 +374,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
             messageId,
             userId: user.$id,
             emoji,
-            totalReactions: reactions.length,
+            totalReactions: parseReactions(updatedMessage.reactions).length,
         });
 
         return NextResponse.json({

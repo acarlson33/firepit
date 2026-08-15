@@ -18,7 +18,10 @@ import {
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import { normalizeFileAttachmentsInput } from "@/lib/file-attachments";
 import { hasEveryoneMention, normalizeMentionIds } from "@/lib/mention-utils";
-import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import {
+    getChannelAccessForUser,
+    getServerPermissionsForUser,
+} from "@/lib/server-channel-access";
 
 type RouteContext = {
     params: Promise<{
@@ -102,6 +105,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
         const parentMessage = parentResult as unknown as Message;
         const threadReplies = response.documents as unknown as Message[];
+
+        if (parentMessage.channelId) {
+            const access = await getChannelAccessForUser(
+                databases,
+                env,
+                parentMessage.channelId,
+                user.$id,
+            );
+            if (!access.canRead) {
+                return returnForbidden();
+            }
+        }
 
         const duration = Date.now() - startTime;
         trackApiCall("/api/messages/[messageId]/thread", "GET", 200, duration);
@@ -208,6 +223,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
             );
         }
 
+        if (parentMessage.channelId) {
+            const access = await getChannelAccessForUser(
+                databases,
+                env,
+                parentMessage.channelId,
+                user.$id,
+            );
+            if (!access.isMember || !access.canSend) {
+                return returnForbidden();
+            }
+        }
+
         // If parent is already a thread reply, use its threadId (flatten threads to single level)
         const actualThreadId = parentMessage.threadId ?? messageId;
         const normalizedMentionsFromInput = mentions
@@ -305,10 +332,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 participants.push(user.$id);
             }
 
-            const nextCount =
-                (actualParent.threadMessageCount ??
-                    actualParent.threadReplyCount ??
-                    0) + 1;
+            let nextCount: number;
+            try {
+                const replies = await databases.listDocuments(
+                    env.databaseId,
+                    env.collections.messages,
+                    [
+                        Query.equal("threadId", actualParentId),
+                        Query.limit(1),
+                    ],
+                );
+                nextCount = (replies.total ?? 0) + 1;
+            } catch {
+                nextCount =
+                    (actualParent.threadMessageCount ??
+                        actualParent.threadReplyCount ??
+                        0) + 1;
+            }
 
             try {
                 await databases.updateDocument(

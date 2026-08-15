@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { AppwriteException, Query } from "node-appwrite";
 
 import { getAdminClient, isDocumentNotFoundError } from "@/lib/appwrite-admin";
@@ -19,6 +21,7 @@ type ThreadReadDocument = {
 const THREAD_READ_QUERY_LIMIT = 500;
 const THREAD_READ_CONTEXT_CHUNK_SIZE = 100;
 const MAX_THREAD_READ_MERGE_ATTEMPTS = 4;
+export const CONCURRENT_DOCUMENT_QUERIES = 4;
 const THREAD_READ_SELECT_FIELDS = [
     "$id",
     "$updatedAt",
@@ -27,6 +30,54 @@ const THREAD_READ_SELECT_FIELDS = [
     "reads",
     "userId",
 ] as const;
+
+/**
+ * Derives a stable, collision-resistant thread-read document id.
+ *
+ * The legacy id `${contextId}_${contextType}_${userId}` was truncated to 36
+ * characters, which silently collapsed distinct ids that shared the first 36
+ * characters. Hashing avoids the collision and the truncation.
+ */
+export function deriveThreadReadDocumentId(params: {
+    contextId: string;
+    contextType: ThreadReadContextType;
+    userId: string;
+}): string {
+    return createHash("sha256")
+        .update(`${params.contextId}_${params.contextType}_${params.userId}`)
+        .digest("hex")
+        .slice(0, 36);
+}
+
+export async function runInBatches<T>(params: {
+    batchSize: number;
+    items: T[];
+    worker: (item: T) => Promise<void>;
+}) {
+    const { batchSize, items, worker } = params;
+    if (items.length === 0 || batchSize <= 0) {
+        return;
+    }
+
+    for (let index = 0; index < items.length; index += batchSize) {
+        await Promise.all(
+            items.slice(index, index + batchSize).map((item) => worker(item)),
+        );
+    }
+}
+
+function isTransientAppwriteError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "number") {
+        return code === 409 || (code >= 500 && code <= 599);
+    }
+
+    return false;
+}
 
 function selectQuery(fields: readonly string[]) {
     if (process.env.NODE_ENV === "test") {
@@ -182,7 +233,10 @@ async function mergeIntoExistingThreadReadDocument(params: {
                     continue;
                 }
 
-                if (attempt < MAX_THREAD_READ_MERGE_ATTEMPTS - 1) {
+                if (
+                    isTransientAppwriteError(error) &&
+                    attempt < MAX_THREAD_READ_MERGE_ATTEMPTS - 1
+                ) {
                     expectedReads = mergeReadsAcrossDocuments(
                         documents,
                         expectedReads,
@@ -213,7 +267,10 @@ async function mergeIntoExistingThreadReadDocument(params: {
                 continue;
             }
 
-            if (attempt < MAX_THREAD_READ_MERGE_ATTEMPTS - 1) {
+            if (
+                isTransientAppwriteError(error) &&
+                attempt < MAX_THREAD_READ_MERGE_ATTEMPTS - 1
+            ) {
                 expectedReads = mergeReadsAcrossDocuments(
                     documents,
                     expectedReads,
@@ -319,22 +376,31 @@ export async function listThreadReadsByContext(params: {
         THREAD_READ_CONTEXT_CHUNK_SIZE,
     );
 
-    const chunkResponses = await Promise.all(
-        contextIdChunks.map((contextIdChunk) =>
-            databases.listDocuments(env.databaseId, env.collections.threadReads, [
-                Query.equal("userId", params.userId),
-                Query.equal("contextType", params.contextType),
-                Query.equal("contextId", contextIdChunk),
-                Query.limit(
-                    Math.min(
-                        THREAD_READ_QUERY_LIMIT,
-                        Math.max(contextIdChunk.length * 4, 1),
-                    ),
+    const chunkResponses: Array<{ documents: unknown[] }> = [];
+    await runInBatches({
+        batchSize: CONCURRENT_DOCUMENT_QUERIES,
+        items: contextIdChunks,
+        worker: async (contextIdChunk) => {
+            chunkResponses.push(
+                await databases.listDocuments(
+                    env.databaseId,
+                    env.collections.threadReads,
+                    [
+                        Query.equal("userId", params.userId),
+                        Query.equal("contextType", params.contextType),
+                        Query.equal("contextId", contextIdChunk),
+                        Query.limit(
+                            Math.min(
+                                THREAD_READ_QUERY_LIMIT,
+                                Math.max(contextIdChunk.length * 4, 1),
+                            ),
+                        ),
+                        ...selectQuery(THREAD_READ_SELECT_FIELDS),
+                    ],
                 ),
-                ...selectQuery(THREAD_READ_SELECT_FIELDS),
-            ]),
-        ),
-    );
+            );
+        },
+    });
     const documents = chunkResponses.flatMap((response) => response.documents);
 
     return documents.reduce<Map<string, Record<string, string>>>(
@@ -386,8 +452,13 @@ export async function upsertThreadReads(params: {
         userId: params.userId,
     };
 
+    const docId = deriveThreadReadDocumentId({
+        contextId: params.contextId,
+        contextType: params.contextType,
+        userId: params.userId,
+    });
+
     try {
-        const docId = `${params.contextId}_${params.contextType}_${params.userId}`.slice(0, 36);
         const createdDocument = await databases.createDocument(
             env.databaseId,
             env.collections.threadReads,
@@ -405,7 +476,6 @@ export async function upsertThreadReads(params: {
         }
 
         // A concurrent create won the race; fetch the existing record directly.
-        const docId = `${params.contextId}_${params.contextType}_${params.userId}`.slice(0, 36);
         try {
             const existingDocument = await databases.getDocument(
                 env.databaseId,

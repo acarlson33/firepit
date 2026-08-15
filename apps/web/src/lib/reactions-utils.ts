@@ -42,15 +42,10 @@ function normalizeReaction(reaction: unknown): Reaction | null {
               ),
           )
         : [];
-    const count =
-        typeof value.count === "number" && Number.isFinite(value.count)
-            ? value.count
-            : userIds.length;
-
     return {
         emoji: value.emoji,
         userIds,
-        count: userIds.length > 0 ? userIds.length : Math.max(0, count),
+        count: userIds.length,
     };
 }
 
@@ -131,7 +126,8 @@ export function parseReactionsWithMetadata(
             .filter((reaction): reaction is Reaction => reaction !== null);
         return {
             reactions,
-            didNormalize: reactions.length !== reactionsData.length,
+            didNormalize:
+                JSON.stringify(reactions) !== JSON.stringify(reactionsData),
         };
     }
 

@@ -33,6 +33,8 @@ vi.mock("@/lib/auth-server", () => ({
 }));
 
 vi.mock("@/lib/newrelic-utils", () => ({
+    returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+    returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
     logger: {
         error: mockLoggerError,
         warn: mockLoggerWarn,

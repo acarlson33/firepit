@@ -8,11 +8,13 @@ import {
 } from "@/lib/notification-settings";
 import { invalidateNotificationSettingsCache } from "@/lib/notification-triggers";
 import { getUserProfile } from "@/lib/appwrite-profiles";
+import { logger } from "@/lib/newrelic-utils";
 import type {
     DirectMessagePrivacy,
     NotificationLevel,
     NotificationOverrideMap,
     NotificationOverride,
+    NotificationSettings,
 } from "@/lib/types";
 
 const VALID_NOTIFICATION_LEVELS: NotificationLevel[] = [
@@ -21,6 +23,18 @@ const VALID_NOTIFICATION_LEVELS: NotificationLevel[] = [
     "nothing",
 ];
 const VALID_DM_PRIVACY: DirectMessagePrivacy[] = ["everyone", "friends"];
+const MAX_OVERRIDE_ENTRIES = 100;
+const OVERRIDE_KEY_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+
+function resolveErrorStatus(error: unknown): number {
+    const candidate = (error as { status?: unknown }).status;
+    return typeof candidate === "number" &&
+        Number.isInteger(candidate) &&
+        candidate >= 400 &&
+        candidate < 600
+        ? candidate
+        : 500;
+}
 
 function isTimezoneValid(timeZone: string): boolean {
     try {
@@ -42,7 +56,16 @@ function isValidOverrideMap(
         return false;
     }
 
-    return Object.values(overrides).every((override) => {
+    const entries = Object.entries(overrides);
+    if (entries.length > MAX_OVERRIDE_ENTRIES) {
+        return false;
+    }
+
+    return entries.every(([key, override]) => {
+        if (!OVERRIDE_KEY_PATTERN.test(key)) {
+            return false;
+        }
+
         if (!override || typeof override !== "object") {
             return false;
         }
@@ -86,19 +109,15 @@ export async function GET() {
             await buildNotificationSettingsResponse(user.$id, settings),
         );
     } catch (error) {
-        const status =
-            typeof (error as { status?: unknown }).status === "number"
-                ? (error as { status: number }).status
-                : 500;
+        logger.error("Failed to get notification settings", {
+            error: error instanceof Error ? error.message : String(error),
+        });
 
         return NextResponse.json(
             {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to fetch notification settings",
+                error: "Failed to get notification settings",
             },
-            { status },
+            { status: 500 },
         );
     }
 }
@@ -171,6 +190,22 @@ export async function PATCH(request: Request) {
             );
         }
 
+        for (const field of [
+            "desktopNotifications",
+            "pushNotifications",
+            "notificationSound",
+        ] as const) {
+            const value = body[field];
+            if (value !== undefined && typeof value !== "boolean") {
+                return NextResponse.json(
+                    {
+                        error: `Invalid ${field} value. Must be a boolean`,
+                    },
+                    { status: 400 },
+                );
+            }
+        }
+
         if (body.dmEncryptionEnabled === true) {
             const currentProfile = await getUserProfile(user.$id);
             const hasPublishedPublicKey =
@@ -207,27 +242,40 @@ export async function PATCH(request: Request) {
             );
         }
 
-        const quietHoursState = [
+        const quietHoursFieldsProvided = [
             body.quietHoursStart,
             body.quietHoursEnd,
             body.quietHoursTimezone,
-        ];
-        const quietHoursFieldsProvided = quietHoursState.filter(
-            (value) => value !== undefined,
-        ).length;
+        ].filter((value) => value !== undefined).length;
 
-        if (
-            quietHoursFieldsProvided > 0 &&
-            body.quietHoursStart !== null &&
-            body.quietHoursEnd !== null &&
-            Boolean(body.quietHoursStart) !== Boolean(body.quietHoursEnd)
-        ) {
-            return NextResponse.json(
-                {
-                    error: "quietHoursStart and quietHoursEnd must both be provided together",
-                },
-                { status: 400 },
-            );
+        let existingSettings: NotificationSettings | null = null;
+
+        if (quietHoursFieldsProvided > 0) {
+            existingSettings = await getOrCreateNotificationSettings(user.$id);
+            if (!existingSettings) {
+                return NextResponse.json(
+                    { error: "Failed to get notification settings" },
+                    { status: 500 },
+                );
+            }
+
+            const pairedStart =
+                body.quietHoursStart === undefined
+                    ? (existingSettings.quietHoursStart ?? null)
+                    : (body.quietHoursStart ?? null);
+            const pairedEnd =
+                body.quietHoursEnd === undefined
+                    ? (existingSettings.quietHoursEnd ?? null)
+                    : (body.quietHoursEnd ?? null);
+
+            if (Boolean(pairedStart) !== Boolean(pairedEnd)) {
+                return NextResponse.json(
+                    {
+                        error: "quietHoursStart and quietHoursEnd must both be provided together",
+                    },
+                    { status: 400 },
+                );
+            }
         }
 
         if (
@@ -272,21 +320,18 @@ export async function PATCH(request: Request) {
             );
         }
 
-        // Get existing settings to get the document ID
-        const existingSettings = await getOrCreateNotificationSettings(
-            user.$id,
-        );
         if (!existingSettings) {
-            return NextResponse.json(
-                { error: "Failed to get notification settings" },
-                { status: 500 },
-            );
+            existingSettings = await getOrCreateNotificationSettings(user.$id);
+            if (!existingSettings) {
+                return NextResponse.json(
+                    { error: "Failed to get notification settings" },
+                    { status: 500 },
+                );
+            }
         }
 
         // Build update data
-        const updateData: Record<string, unknown> = {};
-
-        if (body.globalNotifications !== undefined) {
+        const updateData: Record<string, unknown> = {};        if (body.globalNotifications !== undefined) {
             updateData.globalNotifications = body.globalNotifications;
         }
         if (body.directMessagePrivacy !== undefined) {
@@ -352,11 +397,6 @@ export async function PATCH(request: Request) {
             await buildNotificationSettingsResponse(user.$id, updatedSettings),
         );
     } catch (error) {
-        const status =
-            typeof (error as { status?: unknown }).status === "number"
-                ? (error as { status: number }).status
-                : 500;
-
         return NextResponse.json(
             {
                 error:
@@ -364,7 +404,7 @@ export async function PATCH(request: Request) {
                         ? error.message
                         : "Failed to update notification settings",
             },
-            { status },
+            { status: resolveErrorStatus(error) },
         );
     }
 }

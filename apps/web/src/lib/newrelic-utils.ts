@@ -7,6 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { SeverityNumber, logs } from "@opentelemetry/api-logs";
+import type { Logger } from "@opentelemetry/api-logs";
 import { after } from "next/server";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
@@ -19,42 +20,76 @@ import {
 import { PostHog } from "posthog-node";
 
 // Inlined from posthog-logs.ts — OTLP log pipeline to PostHog.
-const posthogLogsToken =
-    process.env.POSTHOG_PROJECT_API_KEY ??
-    process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ??
-    "";
+// Resolved lazily so importing this module touches no env or telemetry state.
+function getPostHogLogsConfig() {
+    const token =
+        process.env.POSTHOG_PROJECT_API_KEY ??
+        process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ??
+        "";
+    const host =
+        process.env.POSTHOG_LOGS_HOST ??
+        process.env.POSTHOG_HOST ??
+        "https://us.i.posthog.com";
 
-const posthogLogsHost =
-    process.env.POSTHOG_LOGS_HOST ??
-    process.env.POSTHOG_HOST ??
-    "https://us.i.posthog.com";
-const posthogLogsUrl = `${posthogLogsHost.replace(/\/$/, "")}/i/v1/logs`;
+    return {
+        token,
+        url: `${host.replace(/\/$/, "")}/i/v1/logs`,
+    };
+}
 
-const otlpLogExporter = new OTLPLogExporter({
-    url: posthogLogsUrl,
-    headers: {
-        Authorization: `Bearer ${posthogLogsToken}`,
-        "Content-Type": "application/json",
-    },
-});
+let otlpLogExporter: OTLPLogExporter | null = null;
+let loggerProvider: LoggerProvider | null = null;
+let serverLogger: Logger | null = null;
 
-export const loggerProvider = new LoggerProvider({
-    resource: resourceFromAttributes({
-        "service.name": "firepit-web",
-    }),
-    processors: posthogLogsToken
-        ? [
-              process.env.NODE_ENV === "production"
-                  ? new BatchLogRecordProcessor({
-                        exporter: otlpLogExporter,
-                        scheduledDelayMillis: 1_000,
-                    })
-                  : new SimpleLogRecordProcessor({ exporter: otlpLogExporter }),
-          ]
-        : [],
-});
+// Lazily constructs the OTLP log pipeline. Returns null when credentials are
+// missing outside test environments, so importing this module is side-effect-free.
+function getLoggerProvider(): LoggerProvider | null {
+    if (loggerProvider) {
+        return loggerProvider;
+    }
 
-const serverLogger = loggerProvider.getLogger("firepit-web");
+    const { token, url } = getPostHogLogsConfig();
+    if (!token && process.env.NODE_ENV !== "test") {
+        return null;
+    }
+
+    const exporter = new OTLPLogExporter({
+        url,
+        headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+        },
+    });
+    const provider = new LoggerProvider({
+        resource: resourceFromAttributes({
+            "service.name": "firepit-web",
+        }),
+        processors: [
+            process.env.NODE_ENV === "production"
+                ? new BatchLogRecordProcessor({
+                      exporter,
+                      scheduledDelayMillis: 1_000,
+                  })
+                : new SimpleLogRecordProcessor({ exporter }),
+        ],
+    });
+
+    otlpLogExporter = exporter;
+    loggerProvider = provider;
+    return provider;
+}
+
+function getServerLogger(): Logger | null {
+    if (serverLogger) {
+        return serverLogger;
+    }
+    const provider = getLoggerProvider();
+    if (!provider) {
+        return null;
+    }
+    serverLogger = provider.getLogger("firepit-web");
+    return serverLogger;
+}
 
 type LogAttributeValue = string | number | boolean | null | undefined;
 
@@ -102,7 +137,10 @@ export function registerPostHogLoggerProvider() {
     }
 
     loggerProviderRegistered = true;
-    logs.setGlobalLoggerProvider(loggerProvider);
+    const provider = getLoggerProvider();
+    if (provider) {
+        logs.setGlobalLoggerProvider(provider);
+    }
 }
 
 function emitPostHogLog(params: {
@@ -110,30 +148,52 @@ function emitPostHogLog(params: {
     severityNumber: SeverityNumber;
     attributes?: Record<string, unknown>;
 }) {
-    if (!posthogLogsToken) {
+    if (!shouldSendToPostHog()) {
         return;
     }
 
     registerPostHogLoggerProvider();
 
-    serverLogger.emit({
+    const serverLoggerInstance = getServerLogger();
+    if (!serverLoggerInstance) {
+        return;
+    }
+
+    serverLoggerInstance.emit({
         body: params.body,
         severityNumber: params.severityNumber,
-        attributes: normalizeLogAttributes(params.attributes),
+        attributes: normalizeLogAttributes(redactAttributes(params.attributes)),
     });
 }
 
 export function flushPostHogLogs() {
-    return loggerProvider.forceFlush();
+    const provider = getLoggerProvider();
+    if (!provider) {
+        return Promise.resolve();
+    }
+    return provider.forceFlush();
 }
 
+let postHogLogFlushScheduled = false;
+
 function schedulePostHogLogFlush() {
+    if (postHogLogFlushScheduled) {
+        return;
+    }
+    postHogLogFlushScheduled = true;
+
+    const runFlush = () => {
+        void flushPostHogLogs()
+            .catch(() => {})
+            .finally(() => {
+                postHogLogFlushScheduled = false;
+            });
+    };
+
     try {
-        after(async () => {
-            await flushPostHogLogs();
-        });
+        after(runFlush);
     } catch {
-        void flushPostHogLogs().catch(() => {});
+        runFlush();
     }
 }
 
@@ -180,27 +240,51 @@ function toErrorMetadata(value: unknown) {
 }
 
 export function getPostHogClient() {
-    const projectApiKey =
-        process.env.POSTHOG_PROJECT_API_KEY ??
-        process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ??
-        "";
-    const host =
-        process.env.POSTHOG_HOST ??
-        process.env.NEXT_PUBLIC_POSTHOG_HOST ??
-        "https://us.i.posthog.com";
-
     if (!posthogClient) {
+        const projectApiKey =
+            process.env.POSTHOG_PROJECT_API_KEY ??
+            process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ??
+            "";
+        const host =
+            process.env.POSTHOG_HOST ??
+            process.env.NEXT_PUBLIC_POSTHOG_HOST ??
+            "https://us.i.posthog.com";
+
         if (!projectApiKey) {
             posthogClient = createNoOpShim();
         } else {
             posthogClient = new PostHog(projectApiKey, {
                 host,
-                flushAt: 1,
-                flushInterval: 0,
+                flushAt: 20,
+                flushInterval: 2_000,
             });
         }
     }
     return posthogClient;
+}
+
+let postHogClientFlushScheduled = false;
+
+function schedulePostHogClientFlush() {
+    if (postHogClientFlushScheduled) {
+        return;
+    }
+    postHogClientFlushScheduled = true;
+
+    const runFlush = () => {
+        void getPostHogClient()
+            .flush()
+            .catch(() => {})
+            .finally(() => {
+                postHogClientFlushScheduled = false;
+            });
+    };
+
+    try {
+        after(runFlush);
+    } catch {
+        runFlush();
+    }
 }
 
 function capturePostHogServerError(
@@ -216,6 +300,7 @@ function capturePostHogServerError(
             errorStack: errorObject.stack,
             ...properties,
         });
+        schedulePostHogClientFlush();
     } catch {
         // Telemetry forwarding should never impact request handling.
     }
@@ -224,8 +309,13 @@ function capturePostHogServerError(
 let posthogProcessHandlersRegistered = false;
 const capturedUnhandledRejectionErrors = new WeakSet<Error>();
 
+const POSTHOG_FLUSH_TIMEOUT_MS = 5_000;
+
 // ponytail: test-only reset for the PostHog singleton. No-op in production.
 export function __resetPostHogClient() {
+    if (process.env.NODE_ENV === "production") {
+        return;
+    }
     posthogClient = null;
 }
 
@@ -262,15 +352,24 @@ export function registerPostHogProcessHandlers() {
         } catch {
             // Telemetry forwarding should never impact process-level handlers.
         }
-        setImmediate(() => {
-            throw error;
-        });
     });
+
+    const flushWithTimeout = (client: { flush: () => Promise<void> }) =>
+        new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, POSTHOG_FLUSH_TIMEOUT_MS);
+            void client
+                .flush()
+                .catch(() => {})
+                .finally(() => {
+                    clearTimeout(timer);
+                    resolve();
+                });
+        });
 
     process.once("beforeExit", () => {
         const client = posthogClient;
         if (client) {
-            void client.flush().catch(() => {});
+            void flushWithTimeout(client);
         }
     });
 
@@ -278,7 +377,7 @@ export function registerPostHogProcessHandlers() {
         const client = posthogClient;
         void (async () => {
             if (client) {
-                await client.flush().catch(() => {});
+                await flushWithTimeout(client);
             }
             process.exit(130);
         })();
@@ -288,7 +387,7 @@ export function registerPostHogProcessHandlers() {
         const client = posthogClient;
         void (async () => {
             if (client) {
-                await client.flush().catch(() => {});
+                await flushWithTimeout(client);
             }
             process.exit(143);
         })();
@@ -353,6 +452,12 @@ function getTelemetryProvider(): TelemetryProvider {
         return rawProvider;
     }
 
+    if (rawProvider) {
+        console.warn(
+            `[telemetry] Unrecognized TELEMETRY_PROVIDER "${rawProvider}", falling back to "newrelic"`,
+        );
+    }
+
     return "newrelic";
 }
 
@@ -386,6 +491,67 @@ function shouldSendToPostHog() {
     return hasPostHogCredentials();
 }
 
+const SENSITIVE_ATTRIBUTE_KEYS = new Set([
+    "email",
+    "token",
+    "api_key",
+    "apikey",
+    "api_secret",
+    "secret",
+    "password",
+    "passphrase",
+    "authorization",
+    "cookie",
+    "set-cookie",
+    "session_id",
+    "session",
+    "ip_address",
+    "request_body",
+]);
+
+function isSensitiveAttributeKey(key: string): boolean {
+    const normalized = key.toLowerCase().replace(/\s+/g, "_");
+    if (SENSITIVE_ATTRIBUTE_KEYS.has(normalized)) {
+        return true;
+    }
+    return (
+        normalized.includes("token") ||
+        normalized.includes("secret") ||
+        normalized.includes("password") ||
+        normalized.includes("authorization") ||
+        normalized.includes("cookie") ||
+        normalized === "ip" ||
+        normalized.includes("ip_address") ||
+        normalized.endsWith("_ip")
+    );
+}
+
+function redactValue(key: string, value: unknown): unknown {
+    if (isSensitiveAttributeKey(key)) {
+        return "[REDACTED]";
+    }
+    if (Array.isArray(value)) {
+        return value.map((item, index) => redactValue(String(index), item));
+    }
+    if (value && typeof value === "object") {
+        return redactAttributes(value as Record<string, unknown>);
+    }
+    return value;
+}
+
+function redactAttributes(
+    attributes?: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+    if (!attributes) {
+        return undefined;
+    }
+    const redacted: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(attributes)) {
+        redacted[key] = redactValue(key, value);
+    }
+    return redacted;
+}
+
 function getDistinctId(attributes?: Record<string, unknown>) {
     const candidate =
         attributes?.distinctId ??
@@ -415,7 +581,6 @@ function getPersonProperties(attributes?: Record<string, unknown>) {
         attributes.userName ??
         attributes.actorUserName ??
         attributes.name;
-    const emailCandidate = attributes.email;
 
     const properties: Record<string, unknown> = {};
     if (
@@ -423,13 +588,6 @@ function getPersonProperties(attributes?: Record<string, unknown>) {
         usernameCandidate.trim().length > 0
     ) {
         properties.username = usernameCandidate;
-    }
-
-    if (
-        typeof emailCandidate === "string" &&
-        emailCandidate.trim().length > 0
-    ) {
-        properties.email = emailCandidate;
     }
 
     return Object.keys(properties).length > 0 ? properties : undefined;
@@ -445,37 +603,37 @@ function capturePostHogEvent(
 
     try {
         const posthog = getPostHogClient();
-        const personProperties = getPersonProperties(attributes);
+        const safeAttributes = redactAttributes(attributes);
+        const personProperties = getPersonProperties(safeAttributes);
         posthog.capture({
             distinctId: getDistinctId(attributes),
             event,
             properties: personProperties
                 ? {
-                      ...attributes,
+                      ...safeAttributes,
                       $set: {
                           ...personProperties,
                       },
                   }
-                : attributes,
+                : safeAttributes,
         });
+        schedulePostHogClientFlush();
     } catch {
         // Telemetry forwarding should never impact request handling.
     }
 }
 
 function getNewRelicForDispatch() {
-    if (!newrelic && shouldSendToNewRelic()) {
-        void getNewRelic();
-    }
-
     return getNewRelicSync();
 }
 
+let newrelicInitPromise: Promise<NewRelicAgent | null> | null = null;
+
 /**
- * Initialize New Relic (should be called automatically by instrumentation.ts)
+ * Initialize New Relic (should be called once by instrumentation.ts at startup)
  * @returns {Promise<NewRelicAgent | null>} The return value.
  */
-async function initNewRelic() {
+export async function initNewRelic(): Promise<NewRelicAgent | null> {
     if (typeof window !== "undefined") {
         // New Relic doesn't run in the browser (only server-side)
         return null;
@@ -485,26 +643,21 @@ async function initNewRelic() {
         return newrelic;
     }
 
-    try {
-        // Dynamic import for New Relic (server-side only)
-        const nr = await import("newrelic");
-        newrelic = nr.default as NewRelicAgent;
-        return newrelic;
-    } catch {
-        // New Relic not available (development mode or not configured)
-        return null;
+    if (!newrelicInitPromise) {
+        newrelicInitPromise = (async () => {
+            try {
+                // Dynamic import for New Relic (server-side only)
+                const nr = await import("newrelic");
+                newrelic = nr.default as NewRelicAgent;
+                return newrelic;
+            } catch {
+                // New Relic not available (development mode or not configured)
+                return null;
+            }
+        })();
     }
-}
 
-/**
- * Get the New Relic agent instance
- * @returns {Promise<NewRelicAgent | null>} The return value.
- */
-async function getNewRelic(): Promise<NewRelicAgent | null> {
-    if (!newrelic) {
-        newrelic = await initNewRelic();
-    }
-    return newrelic;
+    return newrelicInitPromise;
 }
 
 /**
@@ -526,6 +679,23 @@ const LogLevel = {
 } as const;
 
 type LogLevelType = (typeof LogLevel)[keyof typeof LogLevel];
+
+const consoleMethodByLevel: Record<
+    LogLevelType,
+    (message: string, ...args: unknown[]) => void
+> = {
+    debug: (message, ...args) => console.log(message, ...args),
+    info: (message, ...args) => console.log(message, ...args),
+    warn: (message, ...args) => console.warn(message, ...args),
+    error: (message, ...args) => console.error(message, ...args),
+};
+
+const severityByLevel: Record<LogLevelType, SeverityNumber> = {
+    debug: SeverityNumber.DEBUG,
+    info: SeverityNumber.INFO,
+    warn: SeverityNumber.WARN,
+    error: SeverityNumber.ERROR,
+};
 
 /**
  * Structured log entry (for internal use)
@@ -553,33 +723,22 @@ function log(
 ) {
     // Console logging (development and as fallback)
     if (process.env.NODE_ENV !== "production") {
-        const consoleMethod =
-            level === LogLevel.ERROR
-                ? "error"
-                : level === LogLevel.WARN
-                  ? "warn"
-                  : "log";
-        console[consoleMethod](
+        consoleMethodByLevel[level](
             `[${String(level).toUpperCase()}]`,
             message,
             attributes || "",
         );
     }
 
+    const timestamp = new Date().toISOString();
+
     emitPostHogLog({
         body: message,
-        severityNumber:
-            level === LogLevel.ERROR
-                ? SeverityNumber.ERROR
-                : level === LogLevel.WARN
-                  ? SeverityNumber.WARN
-                  : level === LogLevel.DEBUG
-                    ? SeverityNumber.DEBUG
-                    : SeverityNumber.INFO,
+        severityNumber: severityByLevel[level],
         attributes: {
             level,
             message,
-            timestamp: new Date().toISOString(),
+            timestamp,
             ...attributes,
         },
     });
@@ -591,7 +750,7 @@ function log(
         nr.recordCustomEvent("ApplicationLog", {
             level,
             message,
-            timestamp: new Date().toISOString(),
+            timestamp,
             ...attributes,
         });
     }
@@ -599,7 +758,7 @@ function log(
     capturePostHogEvent("application_log", {
         level,
         message,
-        timestamp: new Date().toISOString(),
+        timestamp,
         ...attributes,
     });
 }
@@ -632,8 +791,10 @@ export function recordError(
     error: Error | string,
     customAttributes?: Record<string, unknown>,
 ) {
-    // Console error as fallback
-    console.error("[ERROR]", error, customAttributes || "");
+    // Console error as fallback (development only)
+    if (process.env.NODE_ENV !== "production") {
+        console.error("[ERROR]", error, customAttributes || "");
+    }
 
     const errorObject =
         error instanceof Error ? error : new Error(String(error));
@@ -658,13 +819,6 @@ export function recordError(
     if (shouldSendToPostHog()) {
         capturePostHogServerError(errorObject, customAttributes);
     }
-
-    capturePostHogEvent("error_recorded", {
-        errorMessage: errorObject.message,
-        errorName: errorObject.name,
-        errorStack: errorObject.stack,
-        ...customAttributes,
-    });
 }
 
 /**

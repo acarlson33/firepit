@@ -208,6 +208,10 @@ describe("Notification settings route", () => {
 
     it("rejects quiet hours when only one boundary is provided", async () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
+        mockGetOrCreate.mockResolvedValue({
+            $id: "settings-1",
+            userId: "user-1",
+        });
 
         const request = new NextRequest(
             "http://localhost/api/notifications/settings",
@@ -226,6 +230,10 @@ describe("Notification settings route", () => {
 
     it("rejects invalid quiet hours timezone", async () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
+        mockGetOrCreate.mockResolvedValue({
+            $id: "settings-1",
+            userId: "user-1",
+        });
 
         const request = new NextRequest(
             "http://localhost/api/notifications/settings",

@@ -18,10 +18,7 @@ type DefaultSignupServerDocument = {
 export async function GET() {
     const session = await getServerSession();
     if (!session?.$id) {
-        return NextResponse.json(
-            { error: "Authentication required" },
-            { status: 401 },
-        );
+        return returnUnauthorized();
     }
 
     const roles = await getUserRoles(session.$id);

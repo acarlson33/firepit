@@ -28,6 +28,9 @@ vi.mock("@/lib/auth-server", () => ({
 
 vi.mock("@/lib/server-channel-access", () => ({
     getServerPermissionsForUser: mockGetServerPermissionsForUser,
+    invalidateServerAccessCacheForUser: vi.fn(),
+    invalidateServerAccessCacheForServer: vi.fn(),
+    invalidateChannelAccessCache: vi.fn(),
 }));
 
 vi.mock("@/lib/appwrite-server", () => ({
@@ -333,6 +336,27 @@ describe("POST /api/channel-permissions", () => {
 
         expect(response.status).toBe(400);
         expect(data.error).toContain("Invalid permission");
+    });
+
+    it("should return 400 if allow or deny is not an array", async () => {
+        const request = new NextRequest(
+            "http://localhost:3000/api/channel-permissions",
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    channelId: "channel1",
+                    roleId: "role1",
+                    allow: "readMessages",
+                }),
+            },
+        );
+
+        const response = await POST(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error).toContain("Invalid permission");
+        expect(mockCreateDocument).not.toHaveBeenCalled();
     });
 });
 

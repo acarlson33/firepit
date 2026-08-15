@@ -80,6 +80,10 @@ export type EnvConfig = {
         polls: string;
         pollVotes: string;
         roleAssignments: string;
+        channelPermissionOverrides: string;
+        pushTokens: string;
+        invites: string;
+        inviteUsage: string;
     };
     buckets: {
         avatars: string;
@@ -116,6 +120,68 @@ function firstDefined(
     return;
 }
 
+type CollectionKey = keyof EnvConfig["collections"];
+type BucketKey = keyof EnvConfig["buckets"];
+
+const COLLECTION_DEFS: Array<{
+    key: CollectionKey;
+    envSuffix: string;
+    defaultName: string;
+}> = [
+    { key: "servers", envSuffix: "SERVERS", defaultName: "servers" },
+    { key: "channels", envSuffix: "CHANNELS", defaultName: "channels" },
+    { key: "categories", envSuffix: "CATEGORIES", defaultName: "categories" },
+    { key: "messages", envSuffix: "MESSAGES", defaultName: "messages" },
+    { key: "audit", envSuffix: "AUDIT", defaultName: "audit" },
+    { key: "memberships", envSuffix: "MEMBERSHIPS", defaultName: "memberships" },
+    { key: "bannedUsers", envSuffix: "BANNED_USERS", defaultName: "banned_users" },
+    { key: "mutedUsers", envSuffix: "MUTED_USERS", defaultName: "muted_users" },
+    { key: "friendships", envSuffix: "FRIENDSHIPS", defaultName: "friendships" },
+    { key: "blocks", envSuffix: "BLOCKS", defaultName: "blocks" },
+    { key: "profiles", envSuffix: "PROFILES", defaultName: "profiles" },
+    { key: "conversations", envSuffix: "CONVERSATIONS", defaultName: "conversations" },
+    { key: "directMessages", envSuffix: "DIRECT_MESSAGES", defaultName: "direct_messages" },
+    { key: "statuses", envSuffix: "STATUSES", defaultName: "statuses" },
+    { key: "messageAttachments", envSuffix: "MESSAGE_ATTACHMENTS", defaultName: "message_attachments" },
+    { key: "pinnedMessages", envSuffix: "PINNED_MESSAGES", defaultName: "pinned_messages" },
+    { key: "featureFlags", envSuffix: "FEATURE_FLAGS", defaultName: "feature_flags" },
+    { key: "notificationSettings", envSuffix: "NOTIFICATION_SETTINGS", defaultName: "notification_settings" },
+    { key: "inboxItems", envSuffix: "INBOX_ITEMS", defaultName: "inbox_items" },
+    { key: "threadReads", envSuffix: "THREAD_READS", defaultName: "thread_reads" },
+    { key: "reports", envSuffix: "REPORTS", defaultName: "reports" },
+    { key: "roles", envSuffix: "ROLES", defaultName: "roles" },
+    { key: "polls", envSuffix: "POLLS", defaultName: "polls" },
+    { key: "pollVotes", envSuffix: "POLL_VOTES", defaultName: "poll_votes" },
+    { key: "roleAssignments", envSuffix: "ROLE_ASSIGNMENTS", defaultName: "role_assignments" },
+    { key: "channelPermissionOverrides", envSuffix: "CHANNEL_PERMISSION_OVERRIDES", defaultName: "channel_permission_overrides" },
+    { key: "pushTokens", envSuffix: "PUSH_TOKENS", defaultName: "push_tokens" },
+    { key: "invites", envSuffix: "INVITES", defaultName: "invites" },
+    { key: "inviteUsage", envSuffix: "INVITE_USAGE", defaultName: "invite_usage" },
+];
+
+const BUCKET_DEFS: Array<{
+    key: BucketKey;
+    envSuffix: string;
+    defaultName: string;
+}> = [
+    { key: "avatars", envSuffix: "AVATARS", defaultName: "avatars" },
+    { key: "emojis", envSuffix: "EMOJIS", defaultName: "emojis" },
+    { key: "images", envSuffix: "IMAGES", defaultName: "images" },
+    { key: "files", envSuffix: "FILES", defaultName: "files" },
+    { key: "gifs", envSuffix: "GIFS", defaultName: "gifs" },
+    { key: "stickers", envSuffix: "STICKERS", defaultName: "stickers" },
+    { key: "profileBackgrounds", envSuffix: "PROFILE_BACKGROUNDS", defaultName: "profile-backgrounds" },
+    { key: "avatarFramesPredefined", envSuffix: "AVATAR_FRAMES_PREDEFINED", defaultName: "avatar-frames-predefined" },
+];
+
+function resolveId(publicVar: string, serverVar: string, defaultName: string): string {
+    return firstDefined(
+        process.env[publicVar],
+        process.env[serverVar],
+        defaultName,
+    )!;
+}
+
 /**
  * Returns env config.
  * @returns {EnvConfig} The return value.
@@ -143,217 +209,27 @@ export function getEnvConfig(): EnvConfig {
             "Appwrite project not configured. Please set NEXT_PUBLIC_APPWRITE_PROJECT_ID in your .env.local file. See .env.local.example for reference.",
         );
     }
-    const databaseId =
-        firstDefined(
-            process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID,
-            process.env.APPWRITE_DATABASE_ID,
-            "main",
-        ) || "main";
-    const collections = {
-        servers:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_SERVERS_COLLECTION_ID,
-                process.env.APPWRITE_SERVERS_COLLECTION_ID,
-                "servers",
-            ) || "servers",
-        channels:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_CHANNELS_COLLECTION_ID,
-                process.env.APPWRITE_CHANNELS_COLLECTION_ID,
-                "channels",
-            ) || "channels",
-        categories:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_CATEGORIES_COLLECTION_ID,
-                process.env.APPWRITE_CATEGORIES_COLLECTION_ID,
-                "categories",
-            ) || "categories",
-        messages:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_MESSAGES_COLLECTION_ID,
-                process.env.APPWRITE_MESSAGES_COLLECTION_ID,
-                "messages",
-            ) || "messages",
-        audit:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_AUDIT_COLLECTION_ID,
-                process.env.APPWRITE_AUDIT_COLLECTION_ID,
-                "audit",
-            ) || "audit",
-        memberships:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_MEMBERSHIPS_COLLECTION_ID,
-                process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID,
-                "memberships",
-            ) || "memberships",
-        bannedUsers:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_BANNED_USERS_COLLECTION_ID,
-                process.env.APPWRITE_BANNED_USERS_COLLECTION_ID,
-                "banned_users",
-            ) || "banned_users",
-        mutedUsers:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_MUTED_USERS_COLLECTION_ID,
-                process.env.APPWRITE_MUTED_USERS_COLLECTION_ID,
-                "muted_users",
-            ) || "muted_users",
-        friendships:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_FRIENDSHIPS_COLLECTION_ID,
-                process.env.APPWRITE_FRIENDSHIPS_COLLECTION_ID,
-                "friendships",
-            ) || "friendships",
-        blocks:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_BLOCKS_COLLECTION_ID,
-                process.env.APPWRITE_BLOCKS_COLLECTION_ID,
-                "blocks",
-            ) || "blocks",
-        profiles:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_PROFILES_COLLECTION_ID,
-                process.env.APPWRITE_PROFILES_COLLECTION_ID,
-                "profiles",
-            ) || "profiles",
-        conversations:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_CONVERSATIONS_COLLECTION_ID,
-                process.env.APPWRITE_CONVERSATIONS_COLLECTION_ID,
-                "conversations",
-            ) || "conversations",
-        directMessages:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_DIRECT_MESSAGES_COLLECTION_ID,
-                process.env.APPWRITE_DIRECT_MESSAGES_COLLECTION_ID,
-                "direct_messages",
-            ) || "direct_messages",
-        statuses:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_STATUSES_COLLECTION_ID,
-                process.env.APPWRITE_STATUSES_COLLECTION_ID,
-                "statuses",
-            ) || "statuses",
-        messageAttachments:
-            firstDefined(
-                process.env
-                    .NEXT_PUBLIC_APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                "message_attachments",
-            ) || "message_attachments",
-        pinnedMessages:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_PINNED_MESSAGES_COLLECTION_ID,
-                process.env.APPWRITE_PINNED_MESSAGES_COLLECTION_ID,
-                "pinned_messages",
-            ) || "pinned_messages",
-        featureFlags:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_FEATURE_FLAGS_COLLECTION_ID,
-                process.env.APPWRITE_FEATURE_FLAGS_COLLECTION_ID,
-                "feature_flags",
-            ) || "feature_flags",
-        notificationSettings:
-            firstDefined(
-                process.env
-                    .NEXT_PUBLIC_APPWRITE_NOTIFICATION_SETTINGS_COLLECTION_ID,
-                process.env.APPWRITE_NOTIFICATION_SETTINGS_COLLECTION_ID,
-                "notification_settings",
-            ) || "notification_settings",
-        inboxItems:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_INBOX_ITEMS_COLLECTION_ID,
-                process.env.APPWRITE_INBOX_ITEMS_COLLECTION_ID,
-                "inbox_items",
-            ) || "inbox_items",
-        threadReads:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_THREAD_READS_COLLECTION_ID,
-                process.env.APPWRITE_THREAD_READS_COLLECTION_ID,
-                "thread_reads",
-            ) || "thread_reads",
-        reports:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_REPORTS_COLLECTION_ID,
-                process.env.APPWRITE_REPORTS_COLLECTION_ID,
-                "reports",
-            ) || "reports",
-        roles:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_ROLES_COLLECTION_ID,
-                process.env.APPWRITE_ROLES_COLLECTION_ID,
-                "roles",
-            ) || "roles",
-        polls:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_POLLS_COLLECTION_ID,
-                process.env.APPWRITE_POLLS_COLLECTION_ID,
-                "polls",
-            ) || "polls",
-        pollVotes:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_POLL_VOTES_COLLECTION_ID,
-                process.env.APPWRITE_POLL_VOTES_COLLECTION_ID,
-                "poll_votes",
-            ) || "poll_votes",
-        roleAssignments:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_ROLE_ASSIGNMENTS_COLLECTION_ID,
-                process.env.APPWRITE_ROLE_ASSIGNMENTS_COLLECTION_ID,
-                "role_assignments",
-            ) || "role_assignments",
-    };
-    const buckets = {
-        avatars:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_AVATARS_BUCKET_ID,
-                process.env.APPWRITE_AVATARS_BUCKET_ID,
-                "avatars",
-            ) || "avatars",
-        emojis:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_EMOJIS_BUCKET_ID,
-                process.env.APPWRITE_EMOJIS_BUCKET_ID,
-                "emojis",
-            ) || "emojis",
-        images:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_IMAGES_BUCKET_ID,
-                process.env.APPWRITE_IMAGES_BUCKET_ID,
-                "images",
-            ) || "images",
-        files:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_FILES_BUCKET_ID,
-                process.env.APPWRITE_FILES_BUCKET_ID,
-                "files",
-            ) || "files",
-        gifs:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_GIFS_BUCKET_ID,
-                process.env.APPWRITE_GIFS_BUCKET_ID,
-                "gifs",
-            ) || "gifs",
-        stickers:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_STICKERS_BUCKET_ID,
-                process.env.APPWRITE_STICKERS_BUCKET_ID,
-                "stickers",
-            ) || "stickers",
-        profileBackgrounds:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_PROFILE_BACKGROUNDS_BUCKET_ID,
-                process.env.APPWRITE_PROFILE_BACKGROUNDS_BUCKET_ID,
-                "profile-backgrounds",
-            ) || "profile-backgrounds",
-        avatarFramesPredefined:
-            firstDefined(
-                process.env
-                    .NEXT_PUBLIC_APPWRITE_AVATAR_FRAMES_PREDEFINED_BUCKET_ID,
-                process.env.APPWRITE_AVATAR_FRAMES_PREDEFINED_BUCKET_ID,
-                "avatar-frames-predefined",
-            ) || "avatar-frames-predefined",
-    };
+    const databaseId = resolveId(
+        "NEXT_PUBLIC_APPWRITE_DATABASE_ID",
+        "APPWRITE_DATABASE_ID",
+        "main",
+    );
+    const collections = {} as EnvConfig["collections"];
+    for (const def of COLLECTION_DEFS) {
+        collections[def.key] = resolveId(
+            `NEXT_PUBLIC_APPWRITE_${def.envSuffix}_COLLECTION_ID`,
+            `APPWRITE_${def.envSuffix}_COLLECTION_ID`,
+            def.defaultName,
+        );
+    }
+    const buckets = {} as EnvConfig["buckets"];
+    for (const def of BUCKET_DEFS) {
+        buckets[def.key] = resolveId(
+            `NEXT_PUBLIC_APPWRITE_${def.envSuffix}_BUCKET_ID`,
+            `APPWRITE_${def.envSuffix}_BUCKET_ID`,
+            def.defaultName,
+        );
+    }
     const teams = {
         adminTeamId: firstDefined(process.env.APPWRITE_ADMIN_TEAM_ID) || null,
         moderatorTeamId:

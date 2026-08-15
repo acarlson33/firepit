@@ -21,13 +21,15 @@ export async function GET() {
 		const headerStore = await headers();
 		const authHeader =
 			headerStore.get("Authorization") ?? headerStore.get("authorization");
-		const token = authHeader
-			? authHeader.trim().split(/\s+/, 2)[1] ?? authHeader.trim()
+		const trimmedHeader = authHeader?.trim();
+		const token = trimmedHeader
+			? trimmedHeader.split(/\s+/, 2)[1] ?? trimmedHeader
 			: null;
 
-		const isLikelyJwt = token
-			? token.split(".").length === 3 &&
-				token.split(".").every((s: string) => s.length > 0)
+		const tokenParts = token ? token.split(".") : null;
+		const isLikelyJwt = tokenParts
+			? tokenParts.length === 3 &&
+				tokenParts.every((s: string) => s.length > 0)
 			: null;
 
 		const user = await getServerSession();

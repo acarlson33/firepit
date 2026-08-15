@@ -103,6 +103,7 @@ const nextConfig: NextConfig = {
 
     // Moved from experimental in Next.js 16
     cacheComponents: true,
+    partialPrefetching: true,
 
     experimental: {
         optimizePackageImports: [
@@ -125,6 +126,11 @@ const nextConfig: NextConfig = {
         cssChunking: true,
         inlineCss: true,
         useTypeScriptCli: true,
+        //turbopackRustReactCompiler: true,
+        useOffline: true,
+        turbopackChunking: {
+            generateComponentChunks: true,
+        },
     },
 
     // Turbopack configuration for Next.js 15+ (successor to Webpack)

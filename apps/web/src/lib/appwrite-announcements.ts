@@ -22,9 +22,23 @@ const MAX_ANNOUNCEMENT_TITLE_LENGTH = 255;
 const MAX_DELIVERY_ATTEMPTS = 6;
 const MAX_ANNOUNCEMENT_DISPATCH_ATTEMPTS = 10;
 const ANNOUNCEMENT_DELIVERY_CONCURRENCY = 10;
+const MAX_ANNOUNCEMENT_DISPATCH_CONCURRENCY = 100;
 const DELIVERY_BACKOFF_BASE_MS = 60_000;
 const DELIVERY_BACKOFF_MAX_MS = 30 * 60_000;
 const ANNOUNCEMENT_DISPATCH_LEASE_MS = 15 * 60_000;
+
+export function parseLimit(rawLimit: string | null): number {
+    if (!rawLimit) {
+        return 25;
+    }
+
+    const parsed = Number.parseInt(rawLimit, 10);
+    if (Number.isNaN(parsed)) {
+        return 25;
+    }
+
+    return Math.max(1, Math.min(parsed, 100));
+}
 
 function getAnnouncementDispatchConcurrency(): number {
     const rawValue = process.env.DISPATCH_CONCURRENCY?.trim();
@@ -37,7 +51,7 @@ function getAnnouncementDispatchConcurrency(): number {
         return ANNOUNCEMENT_DELIVERY_CONCURRENCY;
     }
 
-    return parsedValue;
+    return Math.min(parsedValue, MAX_ANNOUNCEMENT_DISPATCH_CONCURRENCY);
 }
 
 type DeliveryOutcome =
@@ -150,14 +164,19 @@ function isDuplicateConstraintError(error: unknown): boolean {
 
     const candidate = error as {
         type?: unknown;
+        code?: unknown;
     };
+    if (typeof candidate.code === "number" && candidate.code === 409) {
+        return true;
+    }
     if (typeof candidate.type !== "string") {
         return false;
     }
 
     return (
         candidate.type === "row_already_exists" ||
-        candidate.type === "attribute_already_exists"
+        candidate.type === "attribute_already_exists" ||
+        candidate.type === "document_already_exists"
     );
 }
 
@@ -348,6 +367,101 @@ function createAnnouncementDispatchLease(leaseRunId: string) {
         leaseExpiresAt,
         leaseRunId,
     };
+}
+
+const DEFAULT_ANNOUNCEMENT_LEASES_COLLECTION = "announcement_dispatch_leases";
+
+function getAnnouncementLeasesCollectionId(): string {
+    return (
+        process.env.APPWRITE_ANNOUNCEMENT_LEASES_COLLECTION_ID?.trim() ||
+        DEFAULT_ANNOUNCEMENT_LEASES_COLLECTION
+    );
+}
+
+function getAnnouncementLeaseDocumentId(announcementId: string): string {
+    return `lease_${announcementId}`;
+}
+
+// Atomic per-announcement lease: createDocument with a deterministic ID is the
+// only Appwrite primitive that guarantees a single winner among concurrent
+// workers. Requires the announcement_dispatch_leases collection (create it in
+// the Appwrite console; ID.unique-free fixed IDs).
+async function acquireAnnouncementDispatchLease(
+    databases: ReturnType<typeof getServerClient>["databases"],
+    databaseId: string,
+    announcementId: string,
+    dispatchRunId: string,
+): Promise<boolean> {
+    const leaseCollectionId = getAnnouncementLeasesCollectionId();
+    const leaseId = getAnnouncementLeaseDocumentId(announcementId);
+    const { leaseExpiresAt } = createAnnouncementDispatchLease(dispatchRunId);
+
+    const writeLease = () =>
+        databases.createDocument(databaseId, leaseCollectionId, leaseId, {
+            announcementId,
+            leaseRunId: dispatchRunId,
+            leaseExpiresAt,
+        });
+
+    try {
+        await writeLease();
+        return true;
+    } catch (error) {
+        if (!isDuplicateConstraintError(error)) {
+            throw error;
+        }
+    }
+
+    // A lease already exists — only claim it once expired.
+    try {
+        const existing = await databases.getDocument(
+            databaseId,
+            leaseCollectionId,
+            leaseId,
+        );
+        const record = existing as unknown as Record<string, unknown>;
+        const expiresAt =
+            typeof record.leaseExpiresAt === "string"
+                ? Date.parse(record.leaseExpiresAt)
+                : NaN;
+        if (Number.isFinite(expiresAt) && expiresAt > Date.now()) {
+            return false;
+        }
+    } catch {
+        return false;
+    }
+
+    try {
+        await databases.deleteDocument(databaseId, leaseCollectionId, leaseId);
+    } catch {
+        return false;
+    }
+
+    try {
+        await writeLease();
+        return true;
+    } catch (retryError) {
+        if (!isDuplicateConstraintError(retryError)) {
+            throw retryError;
+        }
+        return false;
+    }
+}
+
+async function releaseAnnouncementDispatchLease(
+    databases: ReturnType<typeof getServerClient>["databases"],
+    databaseId: string,
+    announcementId: string,
+): Promise<void> {
+    try {
+        await databases.deleteDocument(
+            databaseId,
+            getAnnouncementLeasesCollectionId(),
+            getAnnouncementLeaseDocumentId(announcementId),
+        );
+    } catch {
+        // Best-effort cleanup; an un-released lease simply expires.
+    }
 }
 
 function isAnnouncementLeaseActive(
@@ -689,7 +803,7 @@ async function* listAllProfileUserIds(
     const { databases } = getServerClient();
     const env = getEnvConfig();
     let cursorAfter: string | undefined;
-    const seenInPage = new Set<string>();
+    const seenUserIds = new Set<string>();
 
     while (true) {
         const queries = [Query.orderAsc("$id"), Query.limit(100)];
@@ -711,12 +825,12 @@ async function* listAllProfileUserIds(
             if (
                 !userId ||
                 userId === excludeUserId ||
-                seenInPage.has(userId)
+                seenUserIds.has(userId)
             ) {
                 continue;
             }
 
-            seenInPage.add(userId);
+            seenUserIds.add(userId);
             yield userId;
         }
 
@@ -847,14 +961,7 @@ async function ensureAnnouncementThreadConversation(params: {
 
         return String(conversation.$id);
     } catch (error) {
-        // Check if this is a duplicate key conflict
-        const isDuplicateConflict =
-            typeof error === "object" &&
-            error !== null &&
-            ("code" in error && (error as { code?: number }).code === 409 ||
-             "type" in error && (error as { type?: string }).type === "document_already_exists");
-
-        if (isDuplicateConflict) {
+        if (isDuplicateConstraintError(error)) {
             // Fetch the existing conversation
             const existing = await databases.listDocuments(
                 databaseId,
@@ -1062,13 +1169,19 @@ async function finalizeAnnouncementDispatch(params: {
     announcement: Announcement;
     dispatchAttempts: number;
     rollup: DeliveryStatusRollup;
+    intendedRecipientCount: number;
 }): Promise<void> {
-    const { announcement, dispatchAttempts, rollup } = params;
+    const {
+        announcement,
+        dispatchAttempts,
+        rollup,
+        intendedRecipientCount,
+    } = params;
     const { databases } = getServerClient();
     const { databaseId } = getEnvConfig();
 
     let status: AnnouncementStatus = "dispatching";
-    if (rollup.total === 0 || rollup.delivered === rollup.total) {
+    if (rollup.delivered >= intendedRecipientCount) {
         status = "sent";
     } else if (dispatchAttempts >= MAX_ANNOUNCEMENT_DISPATCH_ATTEMPTS) {
         status = "failed";
@@ -1116,8 +1229,19 @@ async function dispatchOneAnnouncement(params: {
     const now = new Date().toISOString();
     const nextDispatchAttempts = dispatchAttempts + 1;
     const lease = createAnnouncementDispatchLease(dispatchRunId);
+    let intendedRecipientCount = 0;
 
     try {
+        const acquired = await acquireAnnouncementDispatchLease(
+            databases,
+            databaseId,
+            announcement.$id,
+            dispatchRunId,
+        );
+        if (!acquired) {
+            return { dispatched: false };
+        }
+
         const claimedAnnouncementRecord = await databases.updateDocument(
             databaseId,
             getAnnouncementsCollectionId(),
@@ -1134,10 +1258,6 @@ async function dispatchOneAnnouncement(params: {
         const claimedAnnouncement = toAnnouncement(
             claimedAnnouncementRecord as unknown as Record<string, unknown>,
         );
-
-        if (claimedAnnouncement.leaseRunId !== dispatchRunId) {
-            return { dispatched: false };
-        }
 
         const batchSize = getAnnouncementDispatchConcurrency();
         const recipientBatch: string[] = [];
@@ -1166,6 +1286,7 @@ async function dispatchOneAnnouncement(params: {
         };
 
         for await (const recipientUserId of recipientIds) {
+            intendedRecipientCount += 1;
             recipientBatch.push(recipientUserId);
 
             if (recipientBatch.length >= batchSize) {
@@ -1205,6 +1326,12 @@ async function dispatchOneAnnouncement(params: {
             });
         }
 
+        await releaseAnnouncementDispatchLease(
+            databases,
+            databaseId,
+            announcement.$id,
+        );
+
         return { dispatched: false };
     }
 
@@ -1216,6 +1343,7 @@ async function dispatchOneAnnouncement(params: {
             announcement,
             dispatchAttempts: nextDispatchAttempts,
             rollup,
+            intendedRecipientCount,
         });
     } catch (finalizeError) {
         logger.error("Post-dispatch finalization failed", {
@@ -1224,6 +1352,12 @@ async function dispatchOneAnnouncement(params: {
         });
         // Intentionally do not update dispatchAttempts or status here.
     }
+
+    await releaseAnnouncementDispatchLease(
+        databases,
+        databaseId,
+        announcement.$id,
+    );
 
     return { dispatched: true };
 }
@@ -1320,7 +1454,7 @@ export async function dispatchScheduledAnnouncements(
 
     return {
         announcementIds: updatedIds,
-        dueCount: updatedIds.length,
+        dueCount: due.documents.length,
     };
 }
 

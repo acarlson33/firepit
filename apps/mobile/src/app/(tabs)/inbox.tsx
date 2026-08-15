@@ -1,5 +1,6 @@
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
   FlatList,
   Pressable,
@@ -195,6 +196,8 @@ export default function InboxScreen() {
   useEffect(() => {
     void loadInbox();
   }, [loadInbox]);
+
+  useRetryOnReconnect(loadState === "error", fetchDigest);
 
   // Drop any cached/rendered inbox data when the instance or session changes
   const prevScopeRef = useRef<string | null>(null);

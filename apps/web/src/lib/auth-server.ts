@@ -1,4 +1,5 @@
 import { Account, Client } from "node-appwrite";
+import { cacheLife } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { createHash } from "crypto";
 
@@ -26,11 +27,8 @@ function maskToken(token: string): string {
 
 // Debug-only: describe an Authorization header. Basic credentials are decoded
 // so the origin of the header (app vs. external proxy/basic-auth) can be
-// identified from the username; the password portion stays masked unless
-// FIREPIT_DEBUG_AUTH_FULL=true (admin-only, for matching the full credential
-// against server/CDN configs during diagnosis — disable it afterwards).
+// identified from the username; both username and password are masked.
 export function describeAuthHeader(authHeader: string): string {
-    if (!authHeader) return "(missing)";
     if (!authHeader) return "(missing)";
     const match = authHeader.trim().match(/^Basic\s+([A-Za-z0-9+/=]+)/i);
     if (match) {
@@ -39,11 +37,7 @@ export function describeAuthHeader(authHeader: string): string {
             const colon = decoded.indexOf(":");
             const username =
                 colon >= 0 ? decoded.slice(0, colon) : decoded;
-            const password = colon >= 0 ? decoded.slice(colon + 1) : "";
-            const revealFull = process.env.FIREPIT_DEBUG_AUTH_FULL === "true";
-            return `Basic user="${username}", password="${
-                revealFull ? password : maskToken(password)
-            }"`;
+            return `Basic user="${maskToken(username)}", password="(redacted)"`;
         } catch {
             // fall through to masked raw value
         }
@@ -83,6 +77,34 @@ function setCachedSession(key: string, data: SessionUser | null): void {
         const oldest = sessionCache.keys().next().value;
         if (oldest) sessionCache.delete(oldest);
     }
+}
+
+// Prefer any Bearer token across (possibly comma-joined) header values,
+// e.g. "Basic <creds>, Bearer <token>". A single bare value is treated
+// as a legacy raw session secret. Other schemes (Basic, Digest, ...)
+// are never mistaken for a token.
+function extractBearerToken(authHeader: string): string | undefined {
+    const values = authHeader.split(",").map((v) => v.trim());
+    for (const value of values) {
+        const parts = value.split(/\s+/, 2);
+        if (parts[0].toLowerCase() === "bearer" && parts[1]) {
+            return parts[1];
+        }
+    }
+    if (values.length === 1 && !/\s/.test(values[0])) {
+        return values[0];
+    }
+    return undefined;
+}
+
+// Drop both jwt and session cache entries for a token on logout.
+export function invalidateSessionCacheForToken(
+    endpoint: string,
+    project: string,
+    token: string,
+): void {
+    sessionCache.delete(cacheKey(endpoint, project, token, "jwt"));
+    sessionCache.delete(cacheKey(endpoint, project, token, "session"));
 }
 
 export class AuthError extends Error {
@@ -232,24 +254,6 @@ async function getSessionFromHeader(
         const requestPath =
             headerStore.get("x-firepit-path") ?? headerStore.get("x-invoke-path") ?? "?";
 
-        // Prefer any Bearer token across (possibly comma-joined) header values,
-        // e.g. "Basic <creds>, Bearer <token>". A single bare value is treated
-        // as a legacy raw session secret. Other schemes (Basic, Digest, ...)
-        // are never mistaken for a token.
-        function extractBearerToken(authHeader: string): string | undefined {
-            const values = authHeader.split(",").map((v) => v.trim());
-            for (const value of values) {
-                const parts = value.split(/\s+/, 2);
-                if (parts[0].toLowerCase() === "bearer" && parts[1]) {
-                    return parts[1];
-                }
-            }
-            if (values.length === 1 && !/\s/.test(values[0])) {
-                return values[0];
-            }
-            return undefined;
-        }
-
         let token: string | undefined;
         let tokenSource: string | null = null;
         if (firepitTokenHeader) {
@@ -335,6 +339,8 @@ async function getSessionFromCookie(
  * @returns {Promise<SessionUser | null>} The return value.
  */
 export async function getServerSession(): Promise<SessionUser | null> {
+    "use cache: private";
+    cacheLife("minutes");
     const env = getEnvConfig();
     const endpoint = env.endpoint;
     const project = env.project;

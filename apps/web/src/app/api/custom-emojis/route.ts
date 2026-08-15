@@ -8,6 +8,8 @@ import { logger,
     returnForbidden,
 } from "@/lib/newrelic-utils";
 
+const FILE_EXTENSION_REGEX = /\.[^.]+$/;
+
 /**
  * GET /api/custom-emojis
  * List all custom emojis from Appwrite Storage using admin client
@@ -24,8 +26,7 @@ export async function GET() {
         ]);
 
         const emojis: CustomEmoji[] = files.files.map((file) => {
-            // Extract emoji name from file name or use file name as fallback
-            const emojiName = file.name.replace(/\.[^.]+$/, ""); // Remove file extension
+            const emojiName = file.name.replace(FILE_EXTENSION_REGEX, "");
 
             return {
                 fileId: file.$id,

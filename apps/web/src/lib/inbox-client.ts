@@ -1,3 +1,4 @@
+import { parseJsonResponse } from "@/lib/parse-json-response";
 import type {
     InboxContextKind,
     InboxDigestResponse,
@@ -12,46 +13,12 @@ type MarkInboxItemsReadInput = {
 };
 
 /**
- * Parses inbox response.
- *
- * @param {Response} response - The response value.
- * @returns {Promise<InboxListResponse>} The return value.
- */
-async function parseInboxResponse(response: Response) {
-    if (!response.ok) {
-        const error = (await response.json().catch(() => null)) as {
-            error?: string;
-        } | null;
-        throw new Error(error?.error || "Failed to load inbox");
-    }
-
-    return (await response.json()) as InboxListResponse;
-}
-
-/**
- * Parses inbox digest response.
- *
- * @param {Response} response - The response value.
- * @returns {Promise<InboxDigestResponse>} The return value.
- */
-async function parseInboxDigestResponse(response: Response) {
-    if (!response.ok) {
-        const error = (await response.json().catch(() => null)) as {
-            error?: string;
-        } | null;
-        throw new Error(error?.error || "Failed to load inbox digest");
-    }
-
-    return (await response.json()) as InboxDigestResponse;
-}
-
-/**
  * Lists inbox.
  * @returns {Promise<InboxListResponse>} The return value.
  */
 export async function listInbox(): Promise<InboxListResponse> {
     const response = await fetch("/api/inbox");
-    return parseInboxResponse(response);
+    return parseJsonResponse<InboxListResponse>(response, "Failed to load inbox");
 }
 
 /**
@@ -86,9 +53,13 @@ export async function listInboxWithFilters(params?: {
         query.set("scope", params.scope);
     }
 
-    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    const queryString = query.toString();
+    const suffix = queryString ? `?${queryString}` : "";
     const response = await fetch(`/api/inbox${suffix}`);
-    return parseInboxResponse(response);
+    return parseJsonResponse<InboxListResponse>(
+        response,
+        "Failed to load inbox",
+    );
 }
 
 /**
@@ -110,12 +81,7 @@ export async function markInboxItemsRead({ itemIds }: MarkInboxItemsReadInput) {
         body: JSON.stringify({ itemIds }),
     });
 
-    if (!response.ok) {
-        const error = (await response.json().catch(() => null)) as {
-            error?: string;
-        } | null;
-        throw new Error(error?.error || "Failed to update inbox items");
-    }
+    await parseJsonResponse(response, "Failed to update inbox items");
 }
 
 /**
@@ -140,12 +106,7 @@ export async function markInboxContextRead(params?: {
         }),
     });
 
-    if (!response.ok) {
-        const error = (await response.json().catch(() => null)) as {
-            error?: string;
-        } | null;
-        throw new Error(error?.error || "Failed to mark inbox context read");
-    }
+    await parseJsonResponse(response, "Failed to mark inbox context read");
 }
 
 const SCOPE_TO_CONTEXT_KINDS: Record<InboxScope, InboxContextKind[]> = {
@@ -208,7 +169,11 @@ export async function listInboxDigest(params?: {
         query.set("limit", String(params.limit));
     }
 
-    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    const queryString = query.toString();
+    const suffix = queryString ? `?${queryString}` : "";
     const response = await fetch(`/api/inbox/digest${suffix}`);
-    return parseInboxDigestResponse(response);
+    return parseJsonResponse<InboxDigestResponse>(
+        response,
+        "Failed to load inbox digest",
+    );
 }

@@ -1,6 +1,6 @@
 import type { UserStatus } from "./types";
 
-const ALLOWED_STATUSES = new Set<UserStatus["status"]>([
+export const ALLOWED_STATUSES = new Set<UserStatus["status"]>([
     "online",
     "away",
     "busy",
@@ -8,6 +8,11 @@ const ALLOWED_STATUSES = new Set<UserStatus["status"]>([
 ]);
 
 export const STATUS_STALE_THRESHOLD_MS = 15 * 60 * 1000;
+
+export function statusBatchCacheKey(userIds: string[]): string {
+    const normalizedUserIds = [...new Set(userIds.filter(Boolean))].sort();
+    return `api:status:batch:${normalizedUserIds.join("|")}`;
+}
 
 export type StatusLike = {
     $id?: unknown;
@@ -36,7 +41,7 @@ function coerceTimestamp(value: unknown): string | undefined {
         return undefined;
     }
 
-    return value;
+    return new Date(time).toISOString();
 }
 
 /**

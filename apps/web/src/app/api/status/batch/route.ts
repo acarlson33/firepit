@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { createHash } from "node:crypto";
 import { Query } from "node-appwrite";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
+import { getServerSession } from "@/lib/auth-server";
 import { apiCache } from "@/lib/cache-utils";
 import {
     logger,
@@ -11,25 +11,19 @@ import {
     trackApiCall,
     addTransactionAttributes,
     returnUnauthorized,
-    returnForbidden,
 } from "@/lib/newrelic-utils";
 import type { UserStatus } from "@/lib/types";
-import { normalizeStatus } from "@/lib/status-normalization";
+import {
+    normalizeStatus,
+    statusBatchCacheKey,
+} from "@/lib/status-normalization";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
 const STATUSES_COLLECTION = env.collections.statuses;
 
 const STATUS_BATCH_CACHE_TTL_MS = 30_000;
-
-function statusBatchCacheKey(userIds: string[]): string {
-    const sorted = [...new Set(userIds.filter(Boolean))].sort();
-    const digest = createHash("sha256")
-        .update(sorted.join("|"))
-        .digest("hex")
-        .slice(0, 16);
-    return `api:status:batch:${digest}`;
-}
+const MAX_BATCH_USER_IDS = 1000;
 
 /**
  * Batch fetch user statuses
@@ -40,12 +34,29 @@ export async function POST(request: Request) {
     try {
         setTransactionName("POST /api/status/batch");
 
+        const session = await getServerSession();
+        if (!session?.$id) {
+            return returnUnauthorized();
+        }
+
         const { userIds } = await request.json();
 
         if (!Array.isArray(userIds) || userIds.length === 0) {
             logger.warn("Invalid batch status request", { userIds });
             return NextResponse.json(
                 { error: "userIds array is required" },
+                { status: 400 },
+            );
+        }
+
+        if (userIds.length > MAX_BATCH_USER_IDS) {
+            logger.warn("Batch status request exceeds max user count", {
+                requestedCount: userIds.length,
+            });
+            return NextResponse.json(
+                {
+                    error: `userIds must contain at most ${MAX_BATCH_USER_IDS} entries`,
+                },
                 { status: 400 },
             );
         }
@@ -77,12 +88,15 @@ export async function POST(request: Request) {
                     const response = await databases.listDocuments(
                         DATABASE_ID,
                         STATUSES_COLLECTION,
-                        [Query.equal("userId", batch)],
+                        [
+                            Query.equal("userId", batch),
+                            Query.limit(batch.length),
+                        ],
                     );
 
                     trackApiCall(
-                        "/api/status/batch",
-                        "GET",
+                        "statusBatch.listStatuses",
+                        "POST",
                         200,
                         Date.now() - dbStartTime,
                         { operation: "listDocuments", batchSize: batch.length },

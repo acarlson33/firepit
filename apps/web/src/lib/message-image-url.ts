@@ -1,5 +1,8 @@
 import { getEnvConfig } from "@/lib/appwrite-core";
 
+const PROTOCOL_PREFIX_PATTERN = /^https?:\/\//i;
+const TRAILING_SLASH_PATTERN = /\/$/;
+
 function toNonEmptyString(value: unknown): string | undefined {
     if (typeof value !== "string") {
         return undefined;
@@ -17,7 +20,7 @@ function getAppwriteEndpointUrl(): URL | null {
             return null;
         }
 
-        if (/^https?:\/\//i.test(endpoint)) {
+        if (PROTOCOL_PREFIX_PATTERN.test(endpoint)) {
             return new URL(endpoint);
         }
 
@@ -44,12 +47,12 @@ export function normalizeAppwriteStorageUrl(
         return value;
     }
 
-    const endpointPrefix = endpointUrl.pathname.replace(/\/$/, "");
+    const endpointPrefix = endpointUrl.pathname.replace(TRAILING_SLASH_PATTERN, "");
 
     try {
         const normalized = new URL(value, endpointUrl.origin);
 
-        if (normalized.hostname !== endpointUrl.hostname) {
+        if (normalized.origin !== endpointUrl.origin) {
             return value;
         }
 
@@ -88,7 +91,11 @@ export function resolveMessageImageUrl(params: {
 
     try {
         const env = getEnvConfig();
-        const endpoint = env.endpoint.replace(/\/$/, "");
+        const endpointUrl = getAppwriteEndpointUrl();
+        if (!endpointUrl) {
+            return undefined;
+        }
+        const endpoint = `${endpointUrl.origin}${endpointUrl.pathname.replace(TRAILING_SLASH_PATTERN, "")}`;
         const bucketId = encodeURIComponent(env.buckets.images);
         const fileId = encodeURIComponent(imageFileId);
         const projectId = encodeURIComponent(env.project);

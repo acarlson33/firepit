@@ -1,25 +1,9 @@
+import { parseJsonResponse } from "@/lib/parse-json-response";
 import type { ThreadReadContextType } from "@/lib/thread-read-states";
 
 type ThreadReadResponse = {
     reads?: Record<string, string>;
 };
-
-/**
- * Parses thread read response.
- *
- * @param {Response} response - The response value.
- * @returns {Promise<ThreadReadResponse>} The return value.
- */
-async function parseThreadReadResponse(response: Response) {
-    if (!response.ok) {
-        const error = (await response.json().catch(() => null)) as {
-            error?: string;
-        } | null;
-        throw new Error(error?.error || "Failed to sync thread reads");
-    }
-
-    return (await response.json()) as ThreadReadResponse;
-}
 
 /**
  * Lists thread reads.
@@ -34,7 +18,10 @@ export async function listThreadReads(
 ) {
     const params = new URLSearchParams({ contextId, contextKind: contextType });
     const response = await fetch(`/api/thread-reads?${params.toString()}`);
-    const data = await parseThreadReadResponse(response);
+    const data = await parseJsonResponse<ThreadReadResponse>(
+        response,
+        "Failed to sync thread reads",
+    );
 
     return data.reads ?? {};
 }
@@ -58,7 +45,10 @@ export async function persistThreadReads(params: {
         },
         body: JSON.stringify({ ...rest, contextKind: contextType }),
     });
-    const data = await parseThreadReadResponse(response);
+    const data = await parseJsonResponse<ThreadReadResponse>(
+        response,
+        "Failed to sync thread reads",
+    );
 
     return data.reads ?? {};
 }

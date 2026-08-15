@@ -6,6 +6,7 @@ import {
     getPredefinedAvatarFrameUrlByPresetId,
 } from "@/lib/appwrite-profiles";
 import { getUserStatus } from "@/lib/appwrite-status";
+import { logger } from "@/lib/newrelic-utils";
 
 type Props = {
 	params: Promise<{ userId: string }>;
@@ -22,10 +23,30 @@ export async function GET(_request: Request, { params }: Props) {
 			);
 		}
 
-		const [profile, status] = await Promise.all([
+		const [profileResult, statusResult] = await Promise.allSettled([
 			getUserProfile(userId),
 			getUserStatus(userId),
 		]);
+
+		if (profileResult.status === "rejected") {
+			throw profileResult.reason;
+		}
+
+		const profile = profileResult.value;
+		const status =
+			statusResult.status === "fulfilled"
+				? statusResult.value
+				: undefined;
+
+		if (statusResult.status === "rejected") {
+			logger.warn("Failed to fetch user status for profile response", {
+				error:
+					statusResult.reason instanceof Error
+						? statusResult.reason.message
+						: String(statusResult.reason),
+				userId,
+			});
+		}
 
 		if (!profile) {
 			return NextResponse.json({ error: "Profile not found" }, { status: 404 });

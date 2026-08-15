@@ -7,6 +7,8 @@ import { NextRequest } from "next/server";
 
 // Mock newrelic-utils
 vi.mock("@/lib/newrelic-utils", () => ({
+    returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+    returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
     logger: {
         info: vi.fn(),
         error: vi.fn(),
@@ -47,14 +49,16 @@ describe("GET /api/example-newrelic", () => {
         expect(data.message).toBe("Hello from New Relic instrumented API!");
 
         // Verify New Relic instrumentation was called
-        expect(setTransactionName).toHaveBeenCalledWith("GET /api/example");
+        expect(setTransactionName).toHaveBeenCalledWith(
+            "GET /api/example-newrelic",
+        );
         expect(addTransactionAttributes).toHaveBeenCalledWith({
-            endpoint: "/api/example",
+            endpoint: "/api/example-newrelic",
             method: "GET",
             userAgent: "test-agent",
         });
         expect(trackApiCall).toHaveBeenCalledWith(
-            "/api/example",
+            "/api/example-newrelic",
             "GET",
             200,
             expect.any(Number),
@@ -72,7 +76,7 @@ describe("GET /api/example-newrelic", () => {
 
         expect(response.status).toBe(200);
         expect(addTransactionAttributes).toHaveBeenCalledWith({
-            endpoint: "/api/example",
+            endpoint: "/api/example-newrelic",
             method: "GET",
             userAgent: "unknown",
         });

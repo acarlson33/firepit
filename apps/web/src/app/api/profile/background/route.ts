@@ -9,6 +9,7 @@ import {
     updateProfileBackgroundImageState,
 } from "@/lib/appwrite-profiles";
 import { getAdminClient } from "@/lib/appwrite-admin";
+import { logger } from "@/lib/newrelic-utils";
 
 const ALLOWED_BACKGROUND_TYPES = new Set([
     "image/jpeg",
@@ -18,17 +19,36 @@ const ALLOWED_BACKGROUND_TYPES = new Set([
 const MAX_BACKGROUND_SIZE = 5 * 1024 * 1024; // 5MB
 const BACKGROUND_CHANGE_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
-function canChangeBackground(profile: {
-    profileBackgroundImageChangedAt?: string;
-}): boolean {
-    if (!profile.profileBackgroundImageChangedAt) {
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+function hasAllowedImageSignature(bytes: Uint8Array): boolean {
+    if (
+        bytes.length >= 3 &&
+        bytes[0] === 0xff &&
+        bytes[1] === 0xd8 &&
+        bytes[2] === 0xff
+    ) {
         return true;
     }
-    const lastChanged = new Date(
-        profile.profileBackgroundImageChangedAt,
-    ).getTime();
-    const now = Date.now();
-    return now - lastChanged >= BACKGROUND_CHANGE_COOLDOWN_MS;
+
+    if (
+        bytes.length >= PNG_SIGNATURE.length &&
+        PNG_SIGNATURE.every((byte, index) => bytes[index] === byte)
+    ) {
+        return true;
+    }
+
+    return (
+        bytes.length >= 12 &&
+        bytes[0] === 0x52 && // R
+        bytes[1] === 0x49 && // I
+        bytes[2] === 0x46 && // F
+        bytes[3] === 0x46 && // F
+        bytes[8] === 0x57 && // W
+        bytes[9] === 0x45 && // E
+        bytes[10] === 0x42 && // B
+        bytes[11] === 0x50 // P
+    );
 }
 
 function getRemainingCooldownMs(profile: {
@@ -40,8 +60,17 @@ function getRemainingCooldownMs(profile: {
     const lastChanged = new Date(
         profile.profileBackgroundImageChangedAt,
     ).getTime();
+    if (!Number.isFinite(lastChanged)) {
+        return 0;
+    }
     const nextAllowed = lastChanged + BACKGROUND_CHANGE_COOLDOWN_MS;
     return Math.max(0, nextAllowed - Date.now());
+}
+
+function canChangeBackground(profile: {
+    profileBackgroundImageChangedAt?: string;
+}): boolean {
+    return getRemainingCooldownMs(profile) === 0;
 }
 
 export async function POST(request: Request) {
@@ -89,6 +118,19 @@ export async function POST(request: Request) {
             );
         }
 
+        const signatureBytes = new Uint8Array(
+            await file.slice(0, 16).arrayBuffer(),
+        );
+        if (!hasAllowedImageSignature(signatureBytes)) {
+            return NextResponse.json(
+                {
+                    error:
+                        "Invalid file type. Only JPEG, PNG, and WebP are allowed",
+                },
+                { status: 400 },
+            );
+        }
+
         const env = getEnvConfig();
         const profile = await getOrCreateUserProfile(session.$id, session.name);
 
@@ -117,12 +159,21 @@ export async function POST(request: Request) {
             ],
         );
 
-        await updateProfileBackgroundImageState(profile.$id, {
-            profileBackgroundImageFileId: uploadedFile.$id,
-            profileBackgroundImageChangedAt: new Date().toISOString(),
-            profileBackgroundColor: null,
-            profileBackgroundGradient: null,
-        });
+        try {
+            await updateProfileBackgroundImageState(profile.$id, {
+                profileBackgroundImageFileId: uploadedFile.$id,
+                profileBackgroundImageChangedAt: new Date().toISOString(),
+                profileBackgroundColor: null,
+                profileBackgroundGradient: null,
+            });
+        } catch (error) {
+            try {
+                await deleteProfileBackgroundFile(uploadedFile.$id);
+            } catch {
+                // Non-fatal cleanup failure
+            }
+            throw error;
+        }
 
         if (
             previousBackgroundFileId &&
@@ -142,13 +193,11 @@ export async function POST(request: Request) {
             backgroundUrl,
         });
     } catch (error) {
+        logger.error("Failed to upload profile background", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to upload profile background",
-            },
+            { error: "Failed to upload profile background" },
             { status: 500 },
         );
     }

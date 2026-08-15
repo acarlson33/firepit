@@ -110,11 +110,18 @@ describe("getUserRoleTags cache + implicit tags", () => {
 		const res = await getUserRoleTags(null);
 		expect(res.tags).toHaveLength(0);
 	});
-	it("returns cached value on second call", async () => {
+	it("returns cached value on second call without a network request", async () => {
 		await loadModule();
-		const first = await getUserRoleTags(USER_ID);
-		const second = await getUserRoleTags(USER_ID);
-		expect(second).toEqual(first); // cache hit
+		const fetchSpy = vi.spyOn(globalThis, "fetch");
+		try {
+			const first = await getUserRoleTags(USER_ID);
+			const callsAfterFirst = fetchSpy.mock.calls.length;
+			const second = await getUserRoleTags(USER_ID);
+			expect(second).toEqual(first); // cache hit
+			expect(fetchSpy.mock.calls.length).toBe(callsAfterFirst);
+		} finally {
+			fetchSpy.mockRestore();
+		}
 	});
 	it("adds implicit tags when base roles true but custom tags absent", async () => {
 		(process.env as any).APPWRITE_ADMIN_USER_IDS = USER_ID; // force admin

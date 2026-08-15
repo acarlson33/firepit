@@ -3,10 +3,7 @@ import { NextResponse } from "next/server";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
-import { logger,
-    returnUnauthorized,
-    returnForbidden,
-} from "@/lib/newrelic-utils";
+import { logger } from "@/lib/newrelic-utils";
 
 function buildLoginRedirect(requestUrl: string): {
     loginRedirectUrl: URL;
@@ -25,9 +22,18 @@ export async function GET(request: Request) {
         request.url,
     );
 
-    const featureEnabled = await getFeatureFlag(
-        FEATURE_FLAGS.ENABLE_EMAIL_VERIFICATION,
-    ).catch(() => false);
+    let featureEnabled: boolean;
+    try {
+        featureEnabled = await getFeatureFlag(
+            FEATURE_FLAGS.ENABLE_EMAIL_VERIFICATION,
+        );
+    } catch (error) {
+        logger.error("Failed to check email verification feature flag", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        loginRedirectUrl.searchParams.set("verified", "0");
+        return NextResponse.redirect(loginRedirectUrl);
+    }
 
     if (!featureEnabled) {
         return NextResponse.redirect(loginRedirectUrl);

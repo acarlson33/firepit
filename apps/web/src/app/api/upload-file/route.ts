@@ -20,8 +20,6 @@ import {
     trackApiCall,
     addTransactionAttributes,
     recordEvent,
-    returnUnauthorized,
-    returnForbidden,
 } from "@/lib/newrelic-utils";
 
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
@@ -564,6 +562,24 @@ export async function POST(request: NextRequest) {
 
         const env = getEnvConfig();
         logger.info("Using bucket", { bucketId: env.buckets.files });
+
+        // Validate request content before parsing body.
+        const contentType = request.headers.get("content-type") ?? "";
+        if (!contentType.includes("multipart/form-data")) {
+            return respond(
+                { error: "Expected multipart/form-data" },
+                { status: 400 },
+            );
+        }
+
+        const contentLength = Number(request.headers.get("content-length"));
+        const maxBodySize = 50 * 1024 * 1024; // 50MB
+        if (Number.isFinite(contentLength) && contentLength > maxBodySize) {
+            return respond(
+                { error: "File size must be less than 50MB" },
+                { status: 413 },
+            );
+        }
 
         let formData: FormData;
         try {

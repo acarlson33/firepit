@@ -1,56 +1,62 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-type BlockedUsersResponse = {
-    items?: Array<{
-        block: {
-            $id: string;
-            userId: string;
-            blockedUserId: string;
-            blockedAt: string;
-            reason?: string;
-        };
-        user: {
-            userId: string;
-            displayName?: string;
-            pronouns?: string;
-            avatarUrl?: string;
-        };
-    }>;
-    error?: string;
+import type { BlockedUser } from "@/lib/types";
+
+type BlockedUsersEntry = {
+    block: BlockedUser;
+    user: {
+        userId: string;
+        displayName?: string;
+        pronouns?: string;
+        avatarUrl?: string;
+    };
 };
 
 export function useBlockedUsers() {
-    const [items, setItems] = useState<BlockedUsersResponse["items"]>([]);
+    const [items, setItems] = useState<BlockedUsersEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const requestIdRef = useRef(0);
 
     const refetch = useCallback(async () => {
+        const requestId = ++requestIdRef.current;
         setLoading(true);
         setError(null);
 
         try {
             const response = await fetch("/api/users/blocked");
-            const data = (await response.json()) as BlockedUsersResponse;
+            const data = (await response.json()) as {
+                items?: BlockedUsersEntry[];
+                error?: string;
+            };
             if (!response.ok) {
                 throw new Error(data.error || "Failed to load blocked users");
             }
+            if (requestIdRef.current !== requestId) {
+                return;
+            }
             setItems(data.items ?? []);
         } catch (fetchError) {
+            if (requestIdRef.current !== requestId) {
+                return;
+            }
             setError(
                 fetchError instanceof Error
                     ? fetchError.message
                     : "Failed to load blocked users",
             );
         } finally {
-            setLoading(false);
+            if (requestIdRef.current === requestId) {
+                setLoading(false);
+            }
         }
     }, []);
 
     useEffect(() => {
-        void refetch();
+        refetch();
     }, [refetch]);
 
     const unblock = useCallback(

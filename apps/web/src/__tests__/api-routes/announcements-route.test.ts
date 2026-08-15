@@ -21,6 +21,16 @@ vi.mock("@/lib/appwrite-announcements", () => ({
     dispatchScheduledAnnouncements: mockDispatchScheduledAnnouncements,
     getAnnouncementRuntimeSettings: mockGetAnnouncementRuntimeSettings,
     listAnnouncements: mockListAnnouncements,
+    parseLimit: (rawLimit: string | null) => {
+        if (!rawLimit) {
+            return 25;
+        }
+        const parsed = Number.parseInt(rawLimit, 10);
+        if (Number.isNaN(parsed)) {
+            return 25;
+        }
+        return Math.max(1, Math.min(parsed, 100));
+    },
 }));
 
 vi.mock("@/lib/auth-server", () => {
@@ -43,6 +53,8 @@ vi.mock("@/lib/auth-server", () => {
 });
 
 vi.mock("@/lib/newrelic-utils", () => ({
+    returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+    returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
     logger: {
         error: mockLoggerError,
     },
@@ -131,7 +143,7 @@ describe("announcements API routes", () => {
         const data = await response.json();
 
         expect(response.status).toBe(400);
-        expect(data.error).toBe("body must be a string");
+        expect(data.error).toBe("body must be a non-empty string");
         expect(mockCreateAnnouncement).not.toHaveBeenCalled();
     });
 
@@ -169,6 +181,67 @@ describe("announcements API routes", () => {
         });
         expect(data.announcement.$id).toBe("ann-1");
         expect(data.success).toBe(true);
+    });
+
+    it("defaults mode to draft and priority to normal when absent", async () => {
+        mockCreateAnnouncement.mockResolvedValue({
+            $id: "ann-1",
+            status: "draft",
+        });
+
+        const response = await POST(
+            new Request("http://localhost/api/announcements", {
+                body: JSON.stringify({ body: "Hello" }),
+                method: "POST",
+            }),
+        );
+
+        expect(response.status).toBe(201);
+        expect(mockCreateAnnouncement).toHaveBeenCalledWith(
+            expect.objectContaining({ mode: "draft", priority: "normal" }),
+        );
+    });
+
+    it("rejects an invalid mode with a field-specific error", async () => {
+        const response = await POST(
+            new Request("http://localhost/api/announcements", {
+                body: JSON.stringify({ body: "Hello", mode: "now" }),
+                method: "POST",
+            }),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error).toContain("mode");
+        expect(mockCreateAnnouncement).not.toHaveBeenCalled();
+    });
+
+    it("rejects an invalid priority with a field-specific error", async () => {
+        const response = await POST(
+            new Request("http://localhost/api/announcements", {
+                body: JSON.stringify({ body: "Hello", priority: "highest" }),
+                method: "POST",
+            }),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error).toContain("priority");
+        expect(mockCreateAnnouncement).not.toHaveBeenCalled();
+    });
+
+    it("rejects a whitespace-only announcement body", async () => {
+        const response = await POST(
+            new Request("http://localhost/api/announcements", {
+                body: JSON.stringify({ body: "   " }),
+                method: "POST",
+            }),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error).toBe("body must be a non-empty string");
+        expect(mockCreateAnnouncement).not.toHaveBeenCalled();
     });
 
     it("returns 500 when announcement creation fails", async () => {

@@ -15,14 +15,18 @@ export function useDebouncedBatchUpdate<T>(
 ) {
   const pendingUpdates = useRef<T[]>([]);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
 
   const flush = useCallback(() => {
-    if (pendingUpdates.current.length > 0) {
-      callback(pendingUpdates.current);
-      pendingUpdates.current = [];
-    }
+    const updates = pendingUpdates.current;
+    pendingUpdates.current = [];
     timeoutRef.current = null;
-  }, [callback]);
+
+    if (updates.length > 0) {
+      callbackRef.current(updates);
+    }
+  }, []);
 
   const scheduleUpdate = useCallback(
     (item: T) => {

@@ -17,7 +17,7 @@ interface InstanceInfo {
 	};
 	meta: {
 		version: string;
-		buildTime: string;
+		buildTime: string | null;
 		environment: string;
 	};
 }
@@ -61,10 +61,16 @@ export async function GET(): Promise<NextResponse<InstanceInfo>> {
 		},
 		meta: {
 			version: process.env.FIREPIT_API_VERSION?.trim() || "1.0.0",
-			buildTime: process.env.BUILD_TIME?.trim() || new Date().toISOString(),
+			buildTime: process.env.BUILD_TIME?.trim() || null,
 			environment: process.env.NODE_ENV?.trim() || "development",
 		},
 	};
 
-	return NextResponse.json(instanceInfo);
+	const response = NextResponse.json(instanceInfo);
+	response.headers.set(
+		"Cache-Control",
+		"public, s-maxage=300, stale-while-revalidate=3600",
+	);
+
+	return response;
 }

@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
     ActivityIndicator,
     Modal,
@@ -211,6 +212,8 @@ export default function RolesManagementScreen() {
     useEffect(() => {
         void loadRoles();
     }, [loadRoles]);
+
+    useRetryOnReconnect(loadState === "error", loadRoles);
 
     const handleCreate = async () => {
         if (!instanceUrl || !accessToken || !normalizedServerId || saving) return;

@@ -22,6 +22,8 @@ vi.mock("@/lib/appwrite-profiles", () => ({
 }));
 
 vi.mock("@/lib/newrelic-utils", () => ({
+    returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+    returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
     logger: {
         error: mockLoggerError,
     },
@@ -51,7 +53,7 @@ describe("DM encryption key API route", () => {
         const data = await response.json();
 
         expect(response.status).toBe(401);
-        expect(data.error).toBe("Authentication required");
+        expect(data.error).toBe("Unauthorized");
     });
 
     it("returns the current DM encryption metadata", async () => {
@@ -112,7 +114,7 @@ describe("DM encryption key API route", () => {
         const data = await response.json();
 
         expect(response.status).toBe(401);
-        expect(data.error).toBe("Authentication required");
+        expect(data.error).toBe("Unauthorized");
         expect(mockUpdateUserProfile).not.toHaveBeenCalled();
     });
 

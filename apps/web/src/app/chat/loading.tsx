@@ -1,9 +1,5 @@
-import Loader from "@/components/loader";
+import { ConnectivityLoader } from "@/components/connectivity-loader";
 
 export default function Loading() {
-  return (
-    <div className="flex h-screen w-full items-center justify-center">
-      <Loader />
-    </div>
-  );
+    return <ConnectivityLoader />;
 }

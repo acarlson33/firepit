@@ -16,6 +16,17 @@ import type {
     EffectivePermissions,
 } from "./types";
 
+const PERMISSION_KEYS: readonly (keyof EffectivePermissions)[] = [
+    "readMessages",
+    "sendMessages",
+    "manageMessages",
+    "manageChannels",
+    "manageRoles",
+    "manageServer",
+    "mentionEveryone",
+    "administrator",
+];
+
 /**
  * Calculate effective permissions for a user in a channel context.
  * Takes into account role hierarchy and channel-specific overrides.
@@ -23,12 +34,14 @@ import type {
  * @param {Role[]} roles - The roles value.
  * @param {ChannelPermissionOverride[]} overrides - The overrides value, if provided.
  * @param {boolean} isOwner - The is owner value, if provided.
+ * @param {string | undefined} userId - The user id value, if provided, to select that user's override unambiguously.
  * @returns {{ readMessages: boolean; sendMessages: boolean; manageMessages: boolean; manageChannels: boolean; manageRoles: boolean; manageServer: boolean; mentionEveryone: boolean; administrator: boolean; }} The return value.
  */
 export function getEffectivePermissions(
     roles: Role[],
     overrides: ChannelPermissionOverride[] = [],
     isOwner = false,
+    userId?: string,
 ): EffectivePermissions {
     // Server owner has all permissions
     if (isOwner) {
@@ -59,8 +72,7 @@ export function getEffectivePermissions(
         };
     }
 
-    // Start with base permissions from roles (highest position wins)
-    const sortedRoles = [...roles].sort((a, b) => b.position - a.position);
+    // Start with base permissions from roles (any role grants permission)
     const basePermissions: EffectivePermissions = {
         readMessages: false,
         sendMessages: false,
@@ -73,18 +85,8 @@ export function getEffectivePermissions(
     };
 
     // Merge permissions from all roles (OR operation - any role grants permission)
-    for (const role of sortedRoles) {
-        const permissions: Array<keyof EffectivePermissions> = [
-            "readMessages",
-            "sendMessages",
-            "manageMessages",
-            "manageChannels",
-            "manageRoles",
-            "manageServer",
-            "mentionEveryone",
-            "administrator",
-        ];
-        for (const perm of permissions) {
+    for (const role of roles) {
+        for (const perm of PERMISSION_KEYS) {
             if (role[perm]) {
                 basePermissions[perm] = true;
             }
@@ -93,7 +95,9 @@ export function getEffectivePermissions(
 
     // Apply channel-specific overrides
     // User overrides take precedence over role overrides
-    const userOverride = overrides.find((o) => o.userId && o.userId !== "");
+    const userOverride = userId
+        ? overrides.find((o) => o.userId === userId)
+        : overrides.find((o) => o.userId && o.userId !== "");
     const rolePositionById = new Map(
         roles.map((role) => [role.$id, role.position]),
     );
@@ -225,16 +229,7 @@ export function canManageRole(
  * @returns {Permission[]} The return value.
  */
 export function getAllPermissions(): Permission[] {
-    return [
-        "readMessages",
-        "sendMessages",
-        "manageMessages",
-        "manageChannels",
-        "manageRoles",
-        "manageServer",
-        "mentionEveryone",
-        "administrator",
-    ];
+    return [...PERMISSION_KEYS];
 }
 
 /**

@@ -47,6 +47,21 @@ vi.mock("@/lib/appwrite-core", () => ({
     },
 }));
 
+vi.mock("@/lib/server-channel-access", () => ({
+    getChannelAccessForUser: vi.fn(() =>
+        Promise.resolve({
+            serverId: "server-1",
+            isServerOwner: false,
+            isMember: true,
+            canRead: true,
+            canSend: true,
+        }),
+    ),
+    getServerPermissionsForUser: vi.fn(() =>
+        Promise.resolve({ permissions: { mentionEveryone: true } }),
+    ),
+}));
+
 vi.mock("node-appwrite", () => ({
     ID: { unique: () => "thread-msg-1" },
     Query: {
@@ -139,6 +154,11 @@ describe("Message Thread API", () => {
             serverId: "server-1",
             threadId: "msg-1",
             $createdAt: new Date().toISOString(),
+        });
+
+        mockListDocuments.mockResolvedValue({
+            documents: [],
+            total: 1,
         });
 
         const { POST } =

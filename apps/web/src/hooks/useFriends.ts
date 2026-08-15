@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/contexts/auth-context";
+import type { Friendship } from "@/lib/types";
 
 type FriendUserSummary = {
     userId: string;
@@ -14,17 +15,8 @@ type FriendUserSummary = {
     avatarFrameUrl?: string;
 };
 
-type FriendshipRecord = {
-    $id: string;
-    requesterId: string;
-    addresseeId: string;
-    status: "pending" | "accepted";
-    createdAt: string;
-    respondedAt?: string;
-};
-
 type FriendshipEntry = {
-    friendship: FriendshipRecord;
+    friendship: Friendship;
     user: FriendUserSummary;
 };
 
@@ -76,10 +68,11 @@ export function useFriends(enabled = true) {
     const currentUserId = userData?.userId ?? null;
     const isEnabled = enabled && Boolean(currentUserId);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    const [actionError, setActionError] = useState<string | null>(null);
 
     const {
         data,
+        error: queryError,
         isLoading,
         refetch: queryRefetch,
     } = useQuery({
@@ -94,13 +87,15 @@ export function useFriends(enabled = true) {
         ? (data ?? EMPTY_FRIENDS_DATA)
         : EMPTY_FRIENDS_DATA;
 
+    const error = actionError ?? (queryError ? queryError.message : null);
+
     const refetch = useCallback(async () => {
         if (!isEnabled) {
-            setError(null);
+            setActionError(null);
             return EMPTY_FRIENDS_DATA;
         }
 
-        setError(null);
+        setActionError(null);
 
         try {
             const result = await queryRefetch();
@@ -110,7 +105,7 @@ export function useFriends(enabled = true) {
 
             return result.data ?? EMPTY_FRIENDS_DATA;
         } catch (fetchError) {
-            setError(
+            setActionError(
                 fetchError instanceof Error
                     ? fetchError.message
                     : "Failed to load friends",
@@ -128,7 +123,7 @@ export function useFriends(enabled = true) {
             },
         ) => {
             setActionLoading(key);
-            setError(null);
+            setActionError(null);
             try {
                 const response = await fetch(input.url, {
                     method: input.method,
@@ -147,7 +142,7 @@ export function useFriends(enabled = true) {
                 }
                 return true;
             } catch (actionError) {
-                setError(
+                setActionError(
                     actionError instanceof Error
                         ? actionError.message
                         : "Friend action failed",

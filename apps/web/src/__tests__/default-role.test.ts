@@ -34,6 +34,7 @@ vi.mock("node-appwrite", () => ({
         equal: (...args: unknown[]) => ({ type: "equal", args }),
         orderDesc: (field: string) => ({ type: "orderDesc", field }),
         limit: (value: number) => ({ type: "limit", value }),
+        containsAny: (...args: unknown[]) => ({ type: "containsAny", args }),
     },
 }));
 
@@ -77,6 +78,7 @@ describe("default-role", () => {
             .mockResolvedValueOnce({ documents: [] })
             .mockResolvedValueOnce({
                 documents: [{ $id: "assignment-1", roleIds: ["role-1"] }],
+                total: 1,
             });
 
         createDocument.mockResolvedValue({ $id: "assignment-1" });

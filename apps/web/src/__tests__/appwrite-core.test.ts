@@ -208,8 +208,17 @@ describe("createServer integration (mocked)", () => {
 				}
 			}
 			class Databases {
-				createDocument(_db?: string, _col?: string, _id?: string, data?: any) {
-					return Promise.resolve({ $id: "doc", ...(data || {}) });
+				createDocument(...args: any[]) {
+					const opts =
+						args.length === 1 &&
+						args[0] &&
+						typeof args[0] === "object"
+							? args[0]
+							: { documentId: args[2], data: args[3] };
+					return Promise.resolve({
+						$id: opts.documentId ?? "doc",
+						...(opts.data || {}),
+					});
 				}
 			}
 			const Permission = {

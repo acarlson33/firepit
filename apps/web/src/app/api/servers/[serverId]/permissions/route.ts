@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { Query } from "node-appwrite";
 
+import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
-import { listPages } from "@/lib/appwrite-pagination";
+import { listPages, chunkValues } from "@/lib/appwrite-pagination";
 import { getEffectivePermissions } from "@/lib/permissions";
 import type { ChannelPermissionOverride } from "@/lib/types";
 import { logger,
@@ -44,30 +45,7 @@ function mapOverride(
     };
 }
 
-type QueryWithIn = typeof Query & {
-    in?: (attribute: string, values: string[]) => string;
-};
-
 const QUERY_ARRAY_LIMIT = 100;
-
-function chunkValues<T>(values: T[], size: number): T[][] {
-    const chunks: T[][] = [];
-    for (let index = 0; index < values.length; index += size) {
-        chunks.push(values.slice(index, index + size));
-    }
-    return chunks;
-}
-
-
-function buildRoleIdMembershipQuery(roleIds: string[]): string {
-    const queryWithIn = Query as QueryWithIn;
-    if (typeof queryWithIn.in === "function") {
-        return queryWithIn.in("roleId", roleIds);
-    }
-
-    // Appwrite accepts Query.equal(field, [v1, v2]) as an IN-style fallback.
-    return Query.equal("roleId", roleIds);
-}
 
 async function listOverridePages(params: {
     databases: ReturnType<typeof getDatabases>;
@@ -105,7 +83,12 @@ export async function GET(
         const { serverId } = await params;
         const { searchParams } = new URL(request.url);
         const channelId = searchParams.get("channelId");
-        const userId = searchParams.get("userId");
+        const requestedUserId = searchParams.get("userId");
+
+        const session = await getServerSession();
+        if (!session?.$id) {
+            return returnUnauthorized();
+        }
 
         if (!serverId) {
             return NextResponse.json(
@@ -114,11 +97,25 @@ export async function GET(
             );
         }
 
-        if (!userId) {
-            return NextResponse.json(
-                { error: "userId is required" },
-                { status: 400 },
+        const userId = requestedUserId ?? session.$id;
+
+        if (userId !== session.$id) {
+            const callerAccess = await getServerPermissionsForUser(
+                databases,
+                env,
+                serverId,
+                session.$id,
             );
+            if (
+                !callerAccess.isMember ||
+                !(
+                    callerAccess.permissions.manageRoles ||
+                    callerAccess.permissions.administrator ||
+                    callerAccess.isServerOwner
+                )
+            ) {
+                return returnForbidden();
+            }
         }
 
         const serverAccess = await getServerPermissionsForUser(
@@ -167,7 +164,7 @@ export async function GET(
                                   pageSize: 500,
                                   queries: [
                                       Query.equal("channelId", channelId),
-                                      buildRoleIdMembershipQuery(roleIdChunk),
+                                      Query.equal("roleId", roleIdChunk),
                                   ],
                                   warningContext: "role-overrides",
                               }),
@@ -203,7 +200,6 @@ export async function GET(
 
         // Lightweight channel fetch to derive type/category without recomputing
         try {
-            const databaseId = env.databaseId || "main";
             const channelDoc = await databases.getDocument(
                 databaseId,
                 env.collections.channels,
@@ -215,7 +211,7 @@ export async function GET(
             if (channelDoc.categoryId) {
                 const categoryAccess = await hasAccessToCategory(
                     databases,
-                    { ...env, databaseId },
+                    env,
                     String(channelDoc.categoryId),
                     serverAccess,
                 );
@@ -240,6 +236,10 @@ export async function GET(
                 canSend,
             });
         } catch (error) {
+            logger.error("Failed to load channel during permission check", {
+                channelId,
+                error: error instanceof Error ? error.message : String(error),
+            });
             // If the channel cannot be fetched, deny access conservatively
             return NextResponse.json({
                 ...effectivePerms,

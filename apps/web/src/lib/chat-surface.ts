@@ -100,7 +100,10 @@ function clonePoll(
     const clonedPoll =
         typeof globalThis.structuredClone === "function"
             ? globalThis.structuredClone(poll)
-            : { ...poll };
+            : // Shallow copy is safe: every non-option MessagePoll field is a
+              // primitive, and options (including nested voterIds) are cloned
+              // below.
+              { ...poll };
     const safeOptions = Array.isArray(clonedPoll.options)
         ? clonedPoll.options
         : [];
@@ -157,12 +160,14 @@ function sortByCreatedAt<T extends { createdAt: string; id: string }>(
     items: T[],
 ): T[] {
     return [...items].sort((left, right) => {
-        const createdAtOrder = left.createdAt.localeCompare(right.createdAt);
-        if (createdAtOrder !== 0) {
-            return createdAtOrder;
+        if (left.createdAt !== right.createdAt) {
+            return left.createdAt < right.createdAt ? -1 : 1;
         }
 
-        return left.id.localeCompare(right.id);
+        if (left.id === right.id) {
+            return 0;
+        }
+        return left.id < right.id ? -1 : 1;
     });
 }
 
@@ -221,7 +226,7 @@ export function fromChannelMessage(
         mentions: message.mentions ? [...message.mentions] : undefined,
         reactions: cloneReactions(message.reactions),
         poll: clonePoll(message.poll),
-        isPinned: message.isPinned,
+        isPinned: message.isPinned ?? false,
         pinnedAt: message.pinnedAt,
         pinnedBy: message.pinnedBy,
     };

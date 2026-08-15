@@ -2,11 +2,7 @@
  * Client-side API functions for message reactions
  */
 
-type Reaction = {
-    emoji: string;
-    userIds: string[];
-    count: number;
-};
+import type { Reaction } from "./reactions-utils";
 
 /**
  * Adds a reaction to a message on either the channel or DM route.
@@ -24,8 +20,8 @@ export async function addReaction(
     isDM = false,
 ): Promise<{ success: boolean; reactions?: Reaction[] }> {
     const endpoint = isDM
-        ? `/api/direct-messages/${messageId}/reactions`
-        : `/api/messages/${messageId}/reactions`;
+        ? `/api/direct-messages/${encodeURIComponent(messageId)}/reactions`
+        : `/api/messages/${encodeURIComponent(messageId)}/reactions`;
 
     const response = await fetch(endpoint, {
         method: "POST",
@@ -36,8 +32,16 @@ export async function addReaction(
     });
 
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to add reaction");
+        let errorMessage = "Failed to add reaction";
+        try {
+            const error = (await response.json()) as { error?: unknown };
+            if (typeof error.error === "string" && error.error) {
+                errorMessage = error.error;
+            }
+        } catch {
+            // Non-JSON error body; fall back to the HTTP failure message.
+        }
+        throw new Error(errorMessage);
     }
 
     return response.json();
@@ -59,8 +63,8 @@ export async function removeReaction(
     isDM = false,
 ): Promise<{ success: boolean; reactions?: Reaction[] }> {
     const endpoint = isDM
-        ? `/api/direct-messages/${messageId}/reactions`
-        : `/api/messages/${messageId}/reactions`;
+        ? `/api/direct-messages/${encodeURIComponent(messageId)}/reactions`
+        : `/api/messages/${encodeURIComponent(messageId)}/reactions`;
 
     const response = await fetch(
         `${endpoint}?emoji=${encodeURIComponent(emoji)}`,
@@ -70,8 +74,16 @@ export async function removeReaction(
     );
 
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to remove reaction");
+        let errorMessage = "Failed to remove reaction";
+        try {
+            const error = (await response.json()) as { error?: unknown };
+            if (typeof error.error === "string" && error.error) {
+                errorMessage = error.error;
+            }
+        } catch {
+            // Non-JSON error body; fall back to the HTTP failure message.
+        }
+        throw new Error(errorMessage);
     }
 
     return response.json();

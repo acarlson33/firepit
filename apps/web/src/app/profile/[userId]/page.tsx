@@ -5,8 +5,8 @@ import {
     getCachedAvatarUrl,
     getCachedProfileBackgroundUrl,
     getCachedAvatarFrameUrlForProfile,
+    getCachedUserRoleTags,
 } from "@/lib/cached-data";
-import { getUserRoleTags } from "@/lib/appwrite-roles";
 import { getServerSession } from "@/lib/auth-server";
 import {
     Card,
@@ -42,7 +42,7 @@ export default async function ProfilePage({ params }: Props) {
 
     const [roles, avatarUrl, profileBackgroundUrl, avatarFrameUrl] =
         await Promise.all([
-            getUserRoleTags(userId),
+            getCachedUserRoleTags(userId),
             profile.avatarFileId
                 ? getCachedAvatarUrl(profile.avatarFileId)
                 : Promise.resolve(undefined),

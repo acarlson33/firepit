@@ -8,6 +8,7 @@ const KEY_VERSION = "xchacha20poly1305-v1";
 const KEY_CONTEXT = "firepit-dm-v1";
 const WRAPPING_KEY_DB_NAME = "firepit-dm-encryption";
 const WRAPPING_KEY_STORE = "wrapping-keys";
+const ENCRYPTED_MESSAGE_PLACEHOLDER = "[Encrypted message unavailable]";
 
 function loadSodiumModule() {
     return import("libsodium-wrappers");
@@ -86,6 +87,7 @@ type DmEncryptedPayload = {
 let sodiumPromise: Promise<SodiumApi> | null = null;
 let wrappingKeyDbPromise: Promise<IDBDatabase | null> | null = null;
 const pendingKeyPromises = new Map<string, Promise<DmEncryptionKeyPair>>();
+const pendingWrappingKeys = new Map<string, Promise<CryptoKey | null>>();
 const volatileKeyPairs = new Map<string, DmEncryptionKeyPair>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -295,7 +297,7 @@ function openWrappingKeyDb(): Promise<IDBDatabase | null> {
     }
 
     if (!wrappingKeyDbPromise) {
-        wrappingKeyDbPromise = new Promise((resolve) => {
+        const openPromise = new Promise<IDBDatabase | null>((resolve) => {
             const request = window.indexedDB.open(WRAPPING_KEY_DB_NAME, 1);
 
             request.addEventListener("upgradeneeded", () => {
@@ -312,6 +314,17 @@ function openWrappingKeyDb(): Promise<IDBDatabase | null> {
             request.addEventListener("error", () => {
                 resolve(null);
             });
+
+            request.addEventListener("blocked", () => {
+                resolve(null);
+            });
+        });
+
+        wrappingKeyDbPromise = openPromise.then((database) => {
+            if (!database) {
+                wrappingKeyDbPromise = null;
+            }
+            return database;
         });
     }
 
@@ -385,6 +398,22 @@ async function getOrCreateWrappingKey(
         return null;
     }
 
+    const inFlight = pendingWrappingKeys.get(userId);
+    if (inFlight) {
+        return inFlight;
+    }
+
+    const creation = createWrappingKey(userId);
+    pendingWrappingKeys.set(userId, creation);
+
+    try {
+        return await creation;
+    } finally {
+        pendingWrappingKeys.delete(userId);
+    }
+}
+
+async function createWrappingKey(userId: string): Promise<CryptoKey | null> {
     const existing = await getStoredWrappingKey(userId);
     if (existing) {
         return existing;
@@ -619,7 +648,7 @@ async function getDmEncryptionKeyPair(
     return loadKeyPairFromStorage(userId);
 }
 
-function hasStoredDmEncryptionKeyRecord(userId: string): boolean {
+function hasStoredDmEncryptionKeyPair(userId: string): boolean {
     if (typeof window === "undefined") {
         return false;
     }
@@ -631,7 +660,7 @@ function hasStoredDmEncryptionKeyRecord(userId: string): boolean {
         }
 
         const parsed = JSON.parse(raw) as unknown;
-        return isStoredKeyMetadata(parsed) || isStoredEncryptedKeyPair(parsed);
+        return isStoredEncryptedKeyPair(parsed);
     } catch {
         return false;
     }
@@ -645,7 +674,7 @@ async function ensureDmEncryptionKeyPair(
         return existing;
     }
 
-    if (hasStoredDmEncryptionKeyRecord(userId)) {
+    if (hasStoredDmEncryptionKeyPair(userId)) {
         throw new Error(
             "DM encryption key recovery failed on this device. To prevent key rotation and DM history loss, encryption key regeneration is blocked.",
         );
@@ -791,10 +820,11 @@ function deriveSharedKey(
     const contextBytes = sodium.from_string(KEY_CONTEXT);
     const keyMaterial = concatBytes(sharedSecret, left, right, contextBytes);
 
-    return sodium.crypto_generichash(32, keyMaterial, new Uint8Array(0));
+    return sodium.crypto_generichash(32, keyMaterial);
 }
 
 export async function encryptDmText(params: {
+    context: string;
     recipientPublicKeyBase64: string;
     senderKeyPair: DmEncryptionKeyPair;
     text: string;
@@ -825,7 +855,7 @@ export async function encryptDmText(params: {
     );
     const cipher = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
         sodium.from_string(params.text),
-        null,
+        sodium.from_string(params.context),
         null,
         nonce,
         encryptionKey,
@@ -845,33 +875,35 @@ export async function encryptDmText(params: {
     };
 }
 
-async function decryptDmText(params: {
+async function decryptDmPayload(params: {
+    context?: string;
     encryptedText: string;
     encryptionNonce: string;
-    encryptionSenderPublicKey: string;
-    recipientKeyPair: DmEncryptionKeyPair;
+    legacy?: boolean;
+    localKeyPair: DmEncryptionKeyPair;
+    peerPublicKeyBase64: string;
 }): Promise<string | null> {
     const sodium = await getSodium();
 
     try {
-        const senderPublicKey = sodium.from_base64(
-            normalizeBase64(params.encryptionSenderPublicKey),
+        const localPublicKey = sodium.from_base64(
+            normalizeBase64(params.localKeyPair.publicKeyBase64),
             sodium.base64_variants.ORIGINAL,
         );
-        const recipientPublicKey = sodium.from_base64(
-            normalizeBase64(params.recipientKeyPair.publicKeyBase64),
+        const localPrivateKey = sodium.from_base64(
+            normalizeBase64(params.localKeyPair.privateKeyBase64),
             sodium.base64_variants.ORIGINAL,
         );
-        const recipientPrivateKey = sodium.from_base64(
-            normalizeBase64(params.recipientKeyPair.privateKeyBase64),
+        const peerPublicKey = sodium.from_base64(
+            normalizeBase64(params.peerPublicKeyBase64),
             sodium.base64_variants.ORIGINAL,
         );
 
         const key = deriveSharedKey(
             sodium,
-            recipientPrivateKey,
-            recipientPublicKey,
-            senderPublicKey,
+            localPrivateKey,
+            localPublicKey,
+            peerPublicKey,
         );
         const nonce = sodium.from_base64(
             normalizeBase64(params.encryptionNonce),
@@ -882,74 +914,22 @@ async function decryptDmText(params: {
             sodium.base64_variants.ORIGINAL,
         );
 
+        const additionalData =
+            params.legacy || !params.context
+                ? null
+                : sodium.from_string(params.context);
+
         const plain = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
             null,
             cipher,
-            null,
+            additionalData,
             nonce,
             key,
         );
 
         return sodium.to_string(plain);
     } catch (error) {
-        logger.debug("decryptDmText failed", {
-            error:
-                error instanceof Error
-                    ? `${error.message}${error.stack ? ` | ${error.stack}` : ""}`
-                    : String(error),
-        });
-        return null;
-    }
-}
-
-async function decryptDmTextForSender(params: {
-    encryptedText: string;
-    encryptionNonce: string;
-    recipientPublicKeyBase64: string;
-    senderKeyPair: DmEncryptionKeyPair;
-}): Promise<string | null> {
-    const sodium = await getSodium();
-
-    try {
-        const senderPublicKey = sodium.from_base64(
-            normalizeBase64(params.senderKeyPair.publicKeyBase64),
-            sodium.base64_variants.ORIGINAL,
-        );
-        const senderPrivateKey = sodium.from_base64(
-            normalizeBase64(params.senderKeyPair.privateKeyBase64),
-            sodium.base64_variants.ORIGINAL,
-        );
-        const recipientPublicKey = sodium.from_base64(
-            normalizeBase64(params.recipientPublicKeyBase64),
-            sodium.base64_variants.ORIGINAL,
-        );
-
-        const key = deriveSharedKey(
-            sodium,
-            senderPrivateKey,
-            senderPublicKey,
-            recipientPublicKey,
-        );
-        const nonce = sodium.from_base64(
-            normalizeBase64(params.encryptionNonce),
-            sodium.base64_variants.ORIGINAL,
-        );
-        const cipher = sodium.from_base64(
-            normalizeBase64(params.encryptedText),
-            sodium.base64_variants.ORIGINAL,
-        );
-
-        const plain = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
-            null,
-            cipher,
-            null,
-            nonce,
-            key,
-        );
-
-        return sodium.to_string(plain);
-    } catch (error) {
-        logger.debug("decryptDmTextForSender failed", {
+        logger.debug("decryptDmPayload failed", {
             error:
                 error instanceof Error
                     ? `${error.message}${error.stack ? ` | ${error.stack}` : ""}`
@@ -982,7 +962,7 @@ export async function decryptMessageTextIfNeeded(params: {
         });
         return {
             ...message,
-            text: "[Encrypted message unavailable]",
+            text: ENCRYPTED_MESSAGE_PLACEHOLDER,
         };
     }
 
@@ -995,28 +975,40 @@ export async function decryptMessageTextIfNeeded(params: {
         });
         return {
             ...message,
-            text: "[Encrypted message unavailable]",
+            text: ENCRYPTED_MESSAGE_PLACEHOLDER,
         };
     }
 
-    const decryptedText = isOwnSentMessage
-        ? await decryptDmTextForSender({
-              encryptedText: message.encryptedText,
-              encryptionNonce: message.encryptionNonce,
-              recipientPublicKeyBase64: peerPublicKeyBase64 as string,
-              senderKeyPair: keyPair,
-          })
-        : await decryptDmText({
-              encryptedText: message.encryptedText,
-              encryptionNonce: message.encryptionNonce,
-              encryptionSenderPublicKey: message.encryptionSenderPublicKey,
-              recipientKeyPair: keyPair,
-          });
+    const peerPublicKey =
+        isOwnSentMessage && peerPublicKeyBase64
+            ? peerPublicKeyBase64
+            : message.encryptionSenderPublicKey;
+
+    // Messages encrypted before conversation binding used null additional data.
+    const context = message.conversationId;
+    let decryptedText = await decryptDmPayload({
+        context,
+        encryptedText: message.encryptedText,
+        encryptionNonce: message.encryptionNonce,
+        localKeyPair: keyPair,
+        peerPublicKeyBase64: peerPublicKey,
+    });
+
+    if (decryptedText === null) {
+        decryptedText = await decryptDmPayload({
+            context,
+            encryptedText: message.encryptedText,
+            encryptionNonce: message.encryptionNonce,
+            legacy: true,
+            localKeyPair: keyPair,
+            peerPublicKeyBase64: peerPublicKey,
+        });
+    }
 
     if (decryptedText === null) {
         return {
             ...message,
-            text: "[Encrypted message unavailable]",
+            text: ENCRYPTED_MESSAGE_PLACEHOLDER,
         };
     }
 

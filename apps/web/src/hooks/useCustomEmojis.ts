@@ -68,7 +68,10 @@ function getReadableErrorText(value: unknown): string | null {
     if (typeof value === "object") {
         try {
             const serialized = JSON.stringify(value);
-            return serialized.length > 0 ? serialized : null;
+            if (!serialized || serialized === "{}" || serialized === "[]") {
+                return null;
+            }
+            return serialized;
         } catch {
             return null;
         }
@@ -157,7 +160,15 @@ async function fetchEmojisFromServer(): Promise<CustomEmoji[]> {
             );
         }
         // Fallback to cached emojis
-        return getStoredEmojis();
+        const cached = getStoredEmojis();
+        if (cached.length > 0) {
+            return cached;
+        }
+        // No cache to fall back on: rethrow so React Query observes the
+        // failure and can retry.
+        throw error instanceof Error
+            ? error
+            : new Error("Failed to fetch emojis");
     }
 }
 
@@ -196,6 +207,9 @@ export function useCustomEmojis() {
                 const bucketId =
                     process.env.NEXT_PUBLIC_APPWRITE_EMOJIS_BUCKET_ID;
                 if (!bucketId) {
+                    logger.warn(
+                        "NEXT_PUBLIC_APPWRITE_EMOJIS_BUCKET_ID is not set; custom emoji realtime updates are disabled",
+                    );
                     return;
                 }
 
@@ -218,26 +232,6 @@ export function useCustomEmojis() {
                 };
 
                 try {
-                    // Try updating existing subscription if available
-                    if (subscriptionRef.current) {
-                        const existing = subscriptionRef.current as { update?: (args: Record<string, unknown>) => Promise<void> };
-                        if (typeof existing.update === "function") {
-                            try {
-                                await existing.update({
-                                    queries: [Channel.bucket(bucketId).file().toString()],
-                                });
-                                untrack = trackSubscription(channelKey);
-                                unsubscribe = () => {
-                                    untrack?.();
-                                    void closeSubscriptionSafely(subscriptionRef.current);
-                                };
-                                return;
-                            } catch {
-                                // fallthrough to recreate
-                            }
-                        }
-                    }
-
                     const subscription = await realtime.subscribe(
                         channel,
                         handleStorageEvent,
@@ -296,8 +290,10 @@ export function useCustomEmojis() {
         async (file: File, name: string): Promise<void> => {
             setUploading(true);
 
+            await queryClient.cancelQueries({ queryKey: ["customEmojis"] });
+
             // Create temporary emoji for optimistic update
-            const tempEmojiId = `temp_${Date.now()}`;
+            const tempEmojiId = `temp_${crypto.randomUUID()}`;
             const tempEmoji: CustomEmoji = {
                 fileId: tempEmojiId,
                 url: URL.createObjectURL(file), // Use object URL for immediate preview
@@ -320,6 +316,7 @@ export function useCustomEmojis() {
                 const response = await fetch("/api/upload-emoji", {
                     method: "POST",
                     body: formData,
+                    signal: AbortSignal.timeout(60_000),
                 });
 
                 if (!response.ok) {
@@ -399,6 +396,8 @@ export function useCustomEmojis() {
     // Delete a custom emoji
     const deleteEmoji = useCallback(
         async (fileId: string): Promise<void> => {
+            await queryClient.cancelQueries({ queryKey: ["customEmojis"] });
+
             // Store the emoji being deleted for rollback on error
             const previousEmojis = queryClient.getQueryData<CustomEmoji[]>([
                 "customEmojis",

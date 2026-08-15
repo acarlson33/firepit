@@ -10,21 +10,59 @@ import {
     returnForbidden,
 } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import { invalidateChannelAccessCache } from "@/lib/server-channel-access";
 import { invalidateChannelsServerCaches } from "@/lib/channels-route-cache";
 
 const env = getEnvConfig();
 const databaseId = env.databaseId || "main";
 const overridesCollectionId = "channel_permission_overrides";
 
+const validPermissions: Permission[] = [
+    "readMessages",
+    "sendMessages",
+    "manageMessages",
+    "manageChannels",
+    "manageRoles",
+    "manageServer",
+    "mentionEveryone",
+    "administrator",
+];
+
 function getDatabases() {
     return getServerClient().databases;
 }
 
-async function requireManageChannelsAccessByServerId(serverId: string) {
+function validateAllowDeny(
+    allow: unknown,
+    deny: unknown,
+): { allowArray: string[]; denyArray: string[] } | null {
+    const allowArray = allow === undefined ? [] : allow;
+    const denyArray = deny === undefined ? [] : deny;
+    if (!Array.isArray(allowArray) || !Array.isArray(denyArray)) {
+        return null;
+    }
+
+    const invalid = [...allowArray, ...denyArray].filter(
+        (permission) => !validPermissions.includes(permission as Permission),
+    );
+    if (invalid.length > 0) {
+        return null;
+    }
+
+    return { allowArray, denyArray };
+}
+
+type AuthResult =
+    | { response: NextResponse }
+    | { serverId: string };
+
+async function requireManageChannelsAccessByServerId(
+    serverId: string,
+): Promise<AuthResult> {
     const databases = getDatabases();
     const session = await getServerSession();
     if (!session?.$id) {
-        return returnUnauthorized();
+        return { response: returnUnauthorized() };
     }
 
     const access = await getServerPermissionsForUser(
@@ -35,26 +73,28 @@ async function requireManageChannelsAccessByServerId(serverId: string) {
     );
 
     if (!access.isMember || !access.permissions.manageChannels) {
-        return returnForbidden();
+        return { response: returnForbidden() };
     }
 
-    return null;
+    return { serverId };
 }
 
-async function requireManageChannelsAccessByChannelId(channelId: string) {
+async function requireManageChannelsAccessByChannelId(
+    channelId: string,
+): Promise<AuthResult> {
     const databases = getDatabases();
     const channel = await databases.getDocument(
         databaseId,
         env.collections.channels,
         channelId,
     );
-    const serverId = String(channel.serverId);
-    const authError = await requireManageChannelsAccessByServerId(serverId);
-    if (authError) {
-        return authError;
-    }
+    return requireManageChannelsAccessByServerId(String(channel.serverId));
+}
 
-    return { serverId };
+function isAuthError(
+    authResult: AuthResult,
+): authResult is { response: NextResponse } {
+    return "response" in authResult;
 }
 
 // GET: List permission overrides for a channel
@@ -73,8 +113,8 @@ export async function GET(request: NextRequest) {
 
         const authResult =
             await requireManageChannelsAccessByChannelId(channelId);
-        if (authResult instanceof NextResponse) {
-            return authResult;
+        if (isAuthError(authResult)) {
+            return authResult.response;
         }
 
         const overrides = await databases.listDocuments(
@@ -111,8 +151,8 @@ export async function POST(request: NextRequest) {
 
         const authResult =
             await requireManageChannelsAccessByChannelId(channelId);
-        if (authResult instanceof NextResponse) {
-            return authResult;
+        if (isAuthError(authResult)) {
+            return authResult.response;
         }
 
         if (!roleId && !userId) {
@@ -130,42 +170,29 @@ export async function POST(request: NextRequest) {
         }
 
         // Validate permissions
-        const validPermissions: Permission[] = [
-            "readMessages",
-            "sendMessages",
-            "manageMessages",
-            "manageChannels",
-            "manageRoles",
-            "manageServer",
-            "mentionEveryone",
-            "administrator",
-        ];
-
-        const allowArray = (allow || []) as string[];
-        const denyArray = (deny || []) as string[];
-
-        const invalidAllow = allowArray.filter(
-            (p) => !validPermissions.includes(p as Permission),
-        );
-        const invalidDeny = denyArray.filter(
-            (p) => !validPermissions.includes(p as Permission),
-        );
-
-        if (invalidAllow.length > 0 || invalidDeny.length > 0) {
+        const allowDeny = validateAllowDeny(allow, deny);
+        if (!allowDeny) {
             return NextResponse.json(
                 { error: "Invalid permission values" },
                 { status: 400 },
             );
         }
+        const { allowArray, denyArray } = allowDeny;
 
         // Check if override already exists
         const queries = [Query.equal("channelId", channelId), Query.limit(1)];
 
         if (roleId) {
-            queries.push(Query.equal("roleId", roleId));
+            queries.push(
+                Query.equal("roleId", roleId),
+                Query.equal("userId", ""),
+            );
         }
         if (userId) {
-            queries.push(Query.equal("userId", userId));
+            queries.push(
+                Query.equal("userId", userId),
+                Query.equal("roleId", ""),
+            );
         }
 
         const existing = await databases.listDocuments(
@@ -206,6 +233,7 @@ export async function POST(request: NextRequest) {
         );
 
         invalidateChannelsServerCaches(authResult.serverId);
+        invalidateChannelAccessCache(databaseId, channelId);
 
         return NextResponse.json({ override }, { status: 201 });
     } catch (error) {
@@ -238,41 +266,23 @@ export async function PUT(request: NextRequest) {
             overridesCollectionId,
             overrideId,
         );
+        const channelId = String(existingOverride.channelId);
         const authResult = await requireManageChannelsAccessByChannelId(
-            String(existingOverride.channelId),
+            channelId,
         );
-        if (authResult instanceof NextResponse) {
-            return authResult;
+        if (isAuthError(authResult)) {
+            return authResult.response;
         }
 
         // Validate permissions
-        const validPermissions: Permission[] = [
-            "readMessages",
-            "sendMessages",
-            "manageMessages",
-            "manageChannels",
-            "manageRoles",
-            "manageServer",
-            "mentionEveryone",
-            "administrator",
-        ];
-
-        const allowArray = (allow || []) as string[];
-        const denyArray = (deny || []) as string[];
-
-        const invalidAllow = allowArray.filter(
-            (p) => !validPermissions.includes(p as Permission),
-        );
-        const invalidDeny = denyArray.filter(
-            (p) => !validPermissions.includes(p as Permission),
-        );
-
-        if (invalidAllow.length > 0 || invalidDeny.length > 0) {
+        const allowDeny = validateAllowDeny(allow, deny);
+        if (!allowDeny) {
             return NextResponse.json(
                 { error: "Invalid permission values" },
                 { status: 400 },
             );
         }
+        const { allowArray, denyArray } = allowDeny;
 
         const override = await databases.updateDocument(
             databaseId,
@@ -285,6 +295,7 @@ export async function PUT(request: NextRequest) {
         );
 
         invalidateChannelsServerCaches(authResult.serverId);
+        invalidateChannelAccessCache(databaseId, channelId);
 
         return NextResponse.json({ override });
     } catch (error) {
@@ -317,11 +328,12 @@ export async function DELETE(request: NextRequest) {
             overridesCollectionId,
             overrideId,
         );
+        const channelId = String(existingOverride.channelId);
         const authResult = await requireManageChannelsAccessByChannelId(
-            String(existingOverride.channelId),
+            channelId,
         );
-        if (authResult instanceof NextResponse) {
-            return authResult;
+        if (isAuthError(authResult)) {
+            return authResult.response;
         }
 
         await databases.deleteDocument(
@@ -331,6 +343,7 @@ export async function DELETE(request: NextRequest) {
         );
 
         invalidateChannelsServerCaches(authResult.serverId);
+        invalidateChannelAccessCache(databaseId, channelId);
 
         return NextResponse.json({ success: true });
     } catch (error) {

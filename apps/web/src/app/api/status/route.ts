@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { ID, Query } from "node-appwrite";
+import { Query } from "node-appwrite";
 import { createHash } from "node:crypto";
 
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
+import { getServerSession } from "@/lib/auth-server";
 import {
     logger,
     recordError,
@@ -14,8 +15,13 @@ import {
     returnUnauthorized,
     returnForbidden,
 } from "@/lib/newrelic-utils";
-import { normalizeStatus } from "@/lib/status-normalization";
+import {
+    ALLOWED_STATUSES,
+    normalizeStatus,
+    statusBatchCacheKey,
+} from "@/lib/status-normalization";
 import { apiCache } from "@/lib/cache-utils";
+import type { UserStatus } from "@/lib/types";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -30,21 +36,47 @@ function statusSingleCacheKey(userId: string): string {
     return `api:status:single:${userId}`;
 }
 
-function statusBatchCacheKey(userIds: string[]): string {
-    const normalizedUserIds = [...new Set(userIds.filter(Boolean))].sort();
-    const digest = createHash("sha256")
-        .update(normalizedUserIds.join("|"))
-        .digest("hex")
-        .slice(0, 16);
-    return `api:status:batch:${digest}`;
-}
-
 function dedupeStatusRouteCache<T>(key: string, fetcher: () => Promise<T>) {
     if (!canUseStatusRouteCache()) {
         return fetcher();
     }
 
     return apiCache.dedupe(key, fetcher, STATUS_ROUTE_CACHE_TTL_MS);
+}
+
+function hashUserId(userId: string): string {
+    return createHash("sha256").update(userId).digest("hex").slice(0, 16);
+}
+
+function isAlreadyExistsConflict(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as { code?: unknown; message?: unknown };
+    if (candidate.code === 409) {
+        return true;
+    }
+
+    return typeof candidate.message === "string"
+        ? candidate.message.toLowerCase().includes("already exists")
+        : false;
+}
+
+function statusDocumentData(params: {
+    customMessage?: unknown;
+    expiresAt?: unknown;
+    isManuallySet?: unknown;
+    now: string;
+    status: UserStatus["status"];
+}) {
+    return {
+        status: params.status,
+        customMessage: params.customMessage || null,
+        lastSeenAt: params.now,
+        expiresAt: params.expiresAt || null,
+        isManuallySet: params.isManuallySet || false,
+    };
 }
 
 /**
@@ -56,6 +88,11 @@ export async function POST(request: Request) {
     try {
         setTransactionName("POST /api/status");
 
+        const session = await getServerSession();
+        if (!session?.$id) {
+            return returnUnauthorized();
+        }
+
         const { userId, status, customMessage, expiresAt, isManuallySet } =
             await request.json();
 
@@ -63,6 +100,17 @@ export async function POST(request: Request) {
             logger.warn("Invalid status request", { userId, status });
             return NextResponse.json(
                 { error: "userId and status are required" },
+                { status: 400 },
+            );
+        }
+
+        if (userId !== session.$id) {
+            return returnForbidden();
+        }
+
+        if (!ALLOWED_STATUSES.has(status as UserStatus["status"])) {
+            return NextResponse.json(
+                { error: "Invalid status value" },
                 { status: 400 },
             );
         }
@@ -84,6 +132,7 @@ export async function POST(request: Request) {
         const { databases } = getServerClient();
         const nowDate = new Date();
         const now = nowDate.toISOString();
+        const hashedUserId = hashUserId(userId);
 
         // Try to find existing status document
         const dbStartTime = Date.now();
@@ -126,13 +175,13 @@ export async function POST(request: Request) {
                 DATABASE_ID,
                 STATUSES_COLLECTION,
                 doc.$id,
-                {
+                statusDocumentData({
+                    customMessage,
+                    expiresAt,
+                    isManuallySet,
+                    now,
                     status,
-                    customMessage: customMessage || null,
-                    lastSeenAt: now,
-                    expiresAt: expiresAt || null,
-                    isManuallySet: isManuallySet || false,
-                },
+                }),
                 perms.serverOwner(userId),
             );
 
@@ -145,45 +194,76 @@ export async function POST(request: Request) {
             );
 
             recordEvent("StatusUpdate", {
-                userId,
+                userId: hashedUserId,
                 status,
                 action: "updated",
                 isManuallySet: !!isManuallySet,
             });
 
             logger.info("Status updated", {
-                userId,
+                userId: hashedUserId,
                 status,
                 duration: Date.now() - startTime,
             });
 
-            return NextResponse.json(updated);
+            return NextResponse.json(normalizeStatus(updated).normalized);
         }
 
         if (existing.documents.length > 0 && !shouldUpdate) {
             logger.info("Status not updated - manual status still active", {
-                userId,
+                userId: hashedUserId,
             });
             // Return existing status without updating
-            return NextResponse.json(existing.documents[0]);
+            return NextResponse.json(
+                normalizeStatus(existing.documents[0]).normalized,
+            );
         }
 
-        // Create new status document
+        // Create new status document with a deterministic id so concurrent
+        // creates for the same user resolve to the same document.
         const createStartTime = Date.now();
-        const created = await databases.createDocument(
-            DATABASE_ID,
-            STATUSES_COLLECTION,
-            ID.unique(),
-            {
-                userId,
-                status,
-                customMessage: customMessage || null,
-                lastSeenAt: now,
-                expiresAt: expiresAt || null,
-                isManuallySet: isManuallySet || false,
-            },
-            perms.serverOwner(userId),
-        );
+        const docId = userId.slice(0, 36);
+        const data = statusDocumentData({
+            customMessage,
+            expiresAt,
+            isManuallySet,
+            now,
+            status,
+        });
+
+        let created: Awaited<ReturnType<typeof databases.createDocument>>;
+        try {
+            created = await databases.createDocument(
+                DATABASE_ID,
+                STATUSES_COLLECTION,
+                docId,
+                data,
+                perms.serverOwner(userId),
+            );
+        } catch (error) {
+            if (!isAlreadyExistsConflict(error)) {
+                throw error;
+            }
+
+            // A concurrent request created the document first; update it instead.
+            const winnerResult = await databases.listDocuments(
+                DATABASE_ID,
+                STATUSES_COLLECTION,
+                [Query.equal("userId", userId), Query.limit(1)],
+            );
+            const winner = winnerResult.documents[0];
+            if (!winner) {
+                throw error;
+            }
+
+            created = await databases.updateDocument(
+                DATABASE_ID,
+                STATUSES_COLLECTION,
+                winner.$id,
+                data,
+                perms.serverOwner(userId),
+            );
+        }
 
         trackApiCall("/api/status", "POST", 200, Date.now() - createStartTime, {
             operation: "createDocument",
@@ -191,19 +271,19 @@ export async function POST(request: Request) {
         });
 
         recordEvent("StatusUpdate", {
-            userId,
+            userId: hashedUserId,
             status,
             action: "created",
             isManuallySet: !!isManuallySet,
         });
 
         logger.info("Status created", {
-            userId,
+            userId: hashedUserId,
             status,
             duration: Date.now() - startTime,
         });
 
-        return NextResponse.json(created);
+        return NextResponse.json(normalizeStatus(created).normalized);
     } catch (error) {
         recordError(error instanceof Error ? error : new Error(String(error)), {
             context: "POST /api/status",
@@ -216,10 +296,7 @@ export async function POST(request: Request) {
         });
 
         return NextResponse.json(
-            {
-                error: "Failed to set user status",
-                details: error instanceof Error ? error.message : String(error),
-            },
+            { error: "Failed to set user status" },
             { status: 500 },
         );
     }
@@ -307,10 +384,7 @@ export async function GET(request: Request) {
             error: error instanceof Error ? error.message : String(error),
         });
         return NextResponse.json(
-            {
-                error: "Failed to get user status",
-                details: error instanceof Error ? error.message : String(error),
-            },
+            { error: "Failed to get user status" },
             { status: 500 },
         );
     }
@@ -321,6 +395,11 @@ export async function GET(request: Request) {
  */
 export async function PATCH(request: Request) {
     try {
+        const session = await getServerSession();
+        if (!session?.$id) {
+            return returnUnauthorized();
+        }
+
         const { userId } = await request.json();
 
         if (!userId) {
@@ -328,6 +407,10 @@ export async function PATCH(request: Request) {
                 { error: "userId is required" },
                 { status: 400 },
             );
+        }
+
+        if (userId !== session.$id) {
+            return returnForbidden();
         }
 
         if (!STATUSES_COLLECTION) {
@@ -360,7 +443,10 @@ export async function PATCH(request: Request) {
         }
 
         return NextResponse.json({ success: true });
-    } catch {
+    } catch (error) {
+        logger.error("Error in PATCH /api/status", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to update last seen" },
             { status: 500 },
@@ -373,6 +459,11 @@ export async function PATCH(request: Request) {
  */
 export async function DELETE(request: Request) {
     try {
+        const session = await getServerSession();
+        if (!session?.$id) {
+            return returnUnauthorized();
+        }
+
         const { userId } = await request.json();
 
         if (!userId) {
@@ -380,6 +471,10 @@ export async function DELETE(request: Request) {
                 { error: "userId is required" },
                 { status: 400 },
             );
+        }
+
+        if (userId !== session.$id) {
+            return returnForbidden();
         }
 
         if (!STATUSES_COLLECTION) {
@@ -418,10 +513,7 @@ export async function DELETE(request: Request) {
             error: error instanceof Error ? error.message : String(error),
         });
         return NextResponse.json(
-            {
-                error: "Failed to delete user status",
-                details: error instanceof Error ? error.message : String(error),
-            },
+            { error: "Failed to delete user status" },
             { status: 500 },
         );
     }

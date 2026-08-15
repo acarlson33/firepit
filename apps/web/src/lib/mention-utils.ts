@@ -46,6 +46,11 @@ const EVERYONE_MENTION_REGEX = /(?:^|\s)@all(?=$|\s|[.,!?;:])/i;
 export const MENTION_REGEX = /@(\S+)/g;
 
 /**
+ * Matches `<@userId>` mentions. User IDs may contain ., -, and _.
+ */
+export const MENTION_PATTERN = /<@([a-zA-Z0-9._-]+)>/g;
+
+/**
  * Parse message text to find all @mentions using the simple regex.
  * For names with spaces/symbols, use findMentionSpans in
  * message-with-mentions.tsx with the mentions array instead.
@@ -55,12 +60,10 @@ export const MENTION_REGEX = /@(\S+)/g;
  */
 export function parseMentions(text: string): MentionMatch[] {
     const matches: MentionMatch[] = [];
+    const regex = /@(\S+)/g;
     let match: RegExpExecArray | null;
 
-    // Reset regex state
-    MENTION_REGEX.lastIndex = 0;
-
-    while ((match = MENTION_REGEX.exec(text)) !== null) {
+    while ((match = regex.exec(text)) !== null) {
         matches.push({
             fullMatch: match[0],
             username: match[1],
@@ -145,8 +148,7 @@ export function extractMentionsWithKnownNames(
  * @returns {boolean} The return value.
  */
 export function hasMentions(text: string): boolean {
-    MENTION_REGEX.lastIndex = 0;
-    return MENTION_REGEX.test(text);
+    return /@(\S+)/.test(text);
 }
 
 /**
@@ -171,7 +173,7 @@ export function getMentionAtCursor(
     text: string,
     cursorPosition: number,
 ): MentionMatch | null {
-    const beforeCursor = text.substring(0, cursorPosition);
+    const beforeCursor = text.slice(0, cursorPosition);
     const lastAtSymbol = beforeCursor.lastIndexOf("@");
 
     if (lastAtSymbol === -1) {
@@ -179,19 +181,19 @@ export function getMentionAtCursor(
     }
 
     // Check if there's whitespace between @ and cursor
-    const textAfterAt = text.substring(lastAtSymbol + 1, cursorPosition);
+    const textAfterAt = text.slice(lastAtSymbol + 1, cursorPosition);
     if (/\s/.test(textAfterAt)) {
         return null;
     }
 
     // Find the end of the mention (next whitespace or end of string)
-    const textAfterCursor = text.substring(cursorPosition);
+    const textAfterCursor = text.slice(cursorPosition);
     const nextWhitespace = textAfterCursor.search(/\s/);
     const endIndex =
         nextWhitespace === -1 ? text.length : cursorPosition + nextWhitespace;
 
-    const fullMatch = text.substring(lastAtSymbol, endIndex);
-    const username = fullMatch.substring(1); // Remove @ symbol
+    const fullMatch = text.slice(lastAtSymbol, endIndex);
+    const username = fullMatch.slice(1); // Remove @ symbol
 
     return {
         fullMatch,
@@ -220,8 +222,8 @@ export function replaceMentionAtCursor(
         return { newText: text, newCursorPosition: cursorPosition };
     }
 
-    const before = text.substring(0, mention.startIndex);
-    const after = text.substring(mention.endIndex);
+    const before = text.slice(0, mention.startIndex);
+    const after = text.slice(mention.endIndex);
     const newText = `${before}@${newUsername} ${after}`;
     const newCursorPosition = mention.startIndex + newUsername.length + 2; // +2 for @ and space
 

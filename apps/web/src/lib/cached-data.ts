@@ -4,13 +4,9 @@
  * Cached data fetching utilities
  * These functions use Next.js 16's "use cache" directive for optimal performance
  *
- * Cache durations:
- * - Profile data: 5 minutes (profiles don't change frequently)
- * - Avatar URLs: 1 hour (file IDs are immutable)
- * - Role tags: 5 minutes (role assignments are relatively stable)
- * - Stats: 1 minute (stats are expensive to compute)
- * - Server/Channel lists: 5 minutes (relatively static data)
- * - Profile backgrounds/frames: 1 hour (file IDs are immutable)
+ * Cache tiers used:
+ * - "hours": immutable file-derived URLs (avatars, backgrounds, frames)
+ * - "minutes": everything else (profiles, role tags, stats, server/channel lists)
  */
 
 import { cacheLife } from "next/cache";

@@ -1,20 +1,24 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { Query } from "node-appwrite";
+import type { Databases } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import type { EnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
+import {
+    getChannelAccessForUser,
+    getServerPermissionsForUser,
+} from "@/lib/server-channel-access";
 import { getRelationshipMap } from "@/lib/appwrite-friendships";
 import type { Message, DirectMessage } from "@/lib/types";
-import { getAvatarUrl } from "@/lib/appwrite-profiles";
+import { getAvatarUrl, resolveProfileUserId } from "@/lib/appwrite-profiles";
 import {
     logger,
     recordError,
     setTransactionName,
     trackApiCall,
-    returnUnauthorized,
-    returnForbidden,
 } from "@/lib/newrelic-utils";
 
 type SearchResult = {
@@ -43,6 +47,92 @@ function getOtherIdFromDirectMessage(
     return undefined;
 }
 
+const MAX_ACCESSIBLE_CHANNELS = 100;
+
+const FROM_FILTER_REGEX = /from:@?([a-zA-Z0-9_-]+)/;
+const IN_FILTER_REGEX = /in:#?([a-zA-Z0-9_-]+)/;
+const BEFORE_FILTER_REGEX = /before:(\d{4}-\d{2}-\d{2})/;
+const AFTER_FILTER_REGEX = /after:(\d{4}-\d{2}-\d{2})/;
+const HAS_IMAGE_REGEX = /has:image/g;
+const MENTIONS_ME_REGEX = /mentions:me/g;
+
+async function getAccessibleChannelIds(
+    databases: Databases,
+    env: EnvConfig,
+    userId: string,
+): Promise<string[]> {
+    const membershipResult = await databases.listDocuments(
+        env.databaseId,
+        env.collections.memberships,
+        [Query.equal("userId", userId), Query.limit(1000)],
+    );
+
+    const serverIds = Array.from(
+        new Set(
+            membershipResult.documents
+                .map((doc) => String((doc as Record<string, unknown>).serverId))
+                .filter(Boolean),
+        ),
+    );
+
+    const accessibleChannelIds: string[] = [];
+    for (const serverId of serverIds) {
+        try {
+            const serverAccess = await getServerPermissionsForUser(
+                databases,
+                env,
+                serverId,
+                userId,
+            );
+            if (
+                !serverAccess.isMember ||
+                (!serverAccess.isServerOwner &&
+                    !serverAccess.permissions.administrator &&
+                    !serverAccess.permissions.readMessages)
+            ) {
+                continue;
+            }
+
+            const channelsResult = await databases.listDocuments(
+                env.databaseId,
+                env.collections.channels,
+                [Query.equal("serverId", serverId), Query.limit(1000)],
+            );
+
+            for (const channelDoc of channelsResult.documents) {
+                const channelId = String(
+                    (channelDoc as Record<string, unknown>).$id,
+                );
+                if (!channelId) {
+                    continue;
+                }
+
+                const channelAccess = await getChannelAccessForUser(
+                    databases,
+                    env,
+                    channelId,
+                    userId,
+                );
+                if (channelAccess.canRead) {
+                    accessibleChannelIds.push(channelId);
+                    // ponytail: caps the channel-message constraint at 100
+                    // channels (Appwrite Query.equal array limit). If users can
+                    // read more, OR across paginated equality queries.
+                    if (
+                        accessibleChannelIds.length >= MAX_ACCESSIBLE_CHANNELS
+                    ) {
+                        return accessibleChannelIds;
+                    }
+                }
+            }
+        } catch {
+            // Skip servers whose metadata failed to resolve (e.g. deleted servers).
+        }
+    }
+
+    return accessibleChannelIds;
+}
+
 /**
  * Parse search filters from query string
  * Supports: from:@username, in:#channel, has:image, mentions:me, before:date, after:date
@@ -63,14 +153,14 @@ function parseFilters(query: string) {
     let remainingText = query;
 
     // Extract from:@username or from:username
-    const fromMatch = remainingText.match(/from:@?([a-zA-Z0-9_-]+)/);
+    const fromMatch = remainingText.match(FROM_FILTER_REGEX);
     if (fromMatch) {
         filters.fromUser = fromMatch[1];
         remainingText = remainingText.replace(fromMatch[0], "").trim();
     }
 
     // Extract in:#channel or in:channel
-    const inMatch = remainingText.match(/in:#?([a-zA-Z0-9_-]+)/);
+    const inMatch = remainingText.match(IN_FILTER_REGEX);
     if (inMatch) {
         filters.inChannel = inMatch[1];
         remainingText = remainingText.replace(inMatch[0], "").trim();
@@ -79,24 +169,24 @@ function parseFilters(query: string) {
     // Extract has:image
     if (remainingText.includes("has:image")) {
         filters.hasImage = true;
-        remainingText = remainingText.replace(/has:image/g, "").trim();
+        remainingText = remainingText.replace(HAS_IMAGE_REGEX, "").trim();
     }
 
     // Extract mentions:me
     if (remainingText.includes("mentions:me")) {
         filters.mentionsMe = true;
-        remainingText = remainingText.replace(/mentions:me/g, "").trim();
+        remainingText = remainingText.replace(MENTIONS_ME_REGEX, "").trim();
     }
 
     // Extract before:YYYY-MM-DD
-    const beforeMatch = remainingText.match(/before:(\d{4}-\d{2}-\d{2})/);
+    const beforeMatch = remainingText.match(BEFORE_FILTER_REGEX);
     if (beforeMatch) {
         filters.beforeDate = beforeMatch[1];
         remainingText = remainingText.replace(beforeMatch[0], "").trim();
     }
 
     // Extract after:YYYY-MM-DD
-    const afterMatch = remainingText.match(/after:(\d{4}-\d{2}-\d{2})/);
+    const afterMatch = remainingText.match(AFTER_FILTER_REGEX);
     if (afterMatch) {
         filters.afterDate = afterMatch[1];
         remainingText = remainingText.replace(afterMatch[0], "").trim();
@@ -147,7 +237,44 @@ export async function GET(request: NextRequest) {
         // Parse filters from query
         const filters = parseFilters(query);
 
+        // `from:` filters by username; resolve it to a userId before querying.
+        let fromUserId: string | undefined;
+        if (filters.fromUser) {
+            fromUserId = await resolveProfileUserId(filters.fromUser);
+            if (!fromUserId) {
+                return NextResponse.json(
+                    { error: `Unknown user: ${filters.fromUser}` },
+                    { status: 400 },
+                );
+            }
+        }
+
         const results: SearchResult[] = [];
+
+        const requestedChannelId = channelId || filters.inChannel || null;
+
+        // Verify the caller can read a specific requested channel before searching it.
+        if (requestedChannelId) {
+            const channelAccess = await getChannelAccessForUser(
+                databases,
+                env,
+                requestedChannelId,
+                user.$id,
+            );
+            if (!channelAccess.canRead) {
+                return NextResponse.json({ results: [] });
+            }
+        }
+
+        // Resolve channels the caller can read to constrain the channel search.
+        let accessibleChannelIds: string[] = [];
+        if (!requestedChannelId) {
+            accessibleChannelIds = await getAccessibleChannelIds(
+                databases,
+                env,
+                user.$id,
+            );
+        }
 
         // Build query filters for channel messages
         const messageQueries: string[] = [];
@@ -157,20 +284,17 @@ export async function GET(request: NextRequest) {
             messageQueries.push(Query.search("text", filters.text));
         }
 
-        // Apply channel filter
-        if (channelId || filters.inChannel) {
-            messageQueries.push(
-                Query.equal("channelId", channelId || filters.inChannel || ""),
-            );
+        // Constrain the search to channels the caller can read.
+        if (requestedChannelId) {
+            messageQueries.push(Query.equal("channelId", requestedChannelId));
+        } else if (accessibleChannelIds.length > 0) {
+            messageQueries.push(Query.equal("channelId", accessibleChannelIds));
         }
 
         // Apply user filter
-        if (userId || filters.fromUser) {
-            // If fromUser is a display name, we need to look up the userId first
-            // For now, assume it's a userId
-            messageQueries.push(
-                Query.equal("userId", userId || filters.fromUser || ""),
-            );
+        const filterUserId = userId || fromUserId;
+        if (filterUserId) {
+            messageQueries.push(Query.equal("userId", filterUserId));
         }
 
         // Apply date filters
@@ -207,17 +331,15 @@ export async function GET(request: NextRequest) {
                 dmQueries.push(Query.search("text", filters.text));
             }
 
-            if (userId || filters.fromUser) {
-                dmQueries.push(
-                    Query.equal("senderId", userId || filters.fromUser || ""),
-                );
-            } else {
-                dmQueries.push(
-                    Query.or([
-                        Query.equal("senderId", user.$id),
-                        Query.equal("receiverId", user.$id),
-                    ]),
-                );
+            dmQueries.push(
+                Query.or([
+                    Query.equal("senderId", user.$id),
+                    Query.equal("receiverId", user.$id),
+                ]),
+            );
+
+            if (filterUserId) {
+                dmQueries.push(Query.equal("senderId", filterUserId));
             }
 
             if (fromDate || filters.afterDate) {
@@ -242,18 +364,26 @@ export async function GET(request: NextRequest) {
             dmQueries.push(Query.orderDesc("$createdAt"));
         }
 
+        const canSearchChannels =
+            requestedChannelId !== null || accessibleChannelIds.length > 0;
+
         // Run channel and DM searches in parallel
         const [channelResult, dmResult] = await Promise.all([
-            databases.listDocuments(
-                env.databaseId,
-                env.collections.messages,
-                messageQueries,
-            ).catch((error) => {
-                logger.error("Failed to search channel messages", {
-                    error: error instanceof Error ? error.message : String(error),
-                });
-                return null;
-            }),
+            canSearchChannels
+                ? databases.listDocuments(
+                      env.databaseId,
+                      env.collections.messages,
+                      messageQueries,
+                  ).catch((error) => {
+                      logger.error("Failed to search channel messages", {
+                          error:
+                              error instanceof Error
+                                  ? error.message
+                                  : String(error),
+                      });
+                      return null;
+                  })
+                : Promise.resolve(null),
             dmQueries
                 ? databases.listDocuments(
                       env.databaseId,
@@ -269,12 +399,14 @@ export async function GET(request: NextRequest) {
                 : Promise.resolve(null),
         ]);
 
+        const searchElapsedMs = Date.now() - startTime;
+
         if (channelResult) {
             trackApiCall(
                 "/api/search/messages",
                 "GET",
                 200,
-                0,
+                searchElapsedMs,
                 { operation: "listDocuments", collection: "messages" },
             );
 
@@ -324,7 +456,7 @@ export async function GET(request: NextRequest) {
                 "/api/search/messages",
                 "GET",
                 200,
-                0,
+                searchElapsedMs,
                 {
                     operation: "listDocuments",
                     collection: "directMessages",
@@ -425,8 +557,10 @@ export async function GET(request: NextRequest) {
 
         // Sort all results by date (most recent first)
         visibleResults.sort((a, b) => {
-            const dateA = new Date(a.message.$createdAt).getTime();
-            const dateB = new Date(b.message.$createdAt).getTime();
+            const rawDateA = new Date(a.message.$createdAt).getTime();
+            const rawDateB = new Date(b.message.$createdAt).getTime();
+            const dateA = Number.isFinite(rawDateA) ? rawDateA : 0;
+            const dateB = Number.isFinite(rawDateB) ? rawDateB : 0;
             return dateB - dateA;
         });
 
@@ -502,7 +636,8 @@ export async function GET(request: NextRequest) {
 
         logger.info("Message search completed", {
             userId: user.$id,
-            query,
+            queryLength: query.length,
+            filterCount: Object.keys(filters).length - 1,
             resultCount: limitedResults.length,
             duration: Date.now() - startTime,
         });
@@ -519,12 +654,7 @@ export async function GET(request: NextRequest) {
         });
 
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to search messages",
-            },
+            { error: "Failed to search messages" },
             { status: 500 },
         );
     }

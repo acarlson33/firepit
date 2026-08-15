@@ -5,7 +5,7 @@ import { logger,
     returnUnauthorized,
     returnForbidden,
 } from "@/lib/newrelic-utils";
-import { listPages } from "@/lib/appwrite-pagination";
+import { listPages, chunkValues } from "@/lib/appwrite-pagination";
 import { getServerSession } from "@/lib/auth-server";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { getServerClient } from "@/lib/appwrite-server";
@@ -20,14 +20,6 @@ const mutedUsersCollectionId = env.collections.mutedUsers || "muted_users";
 const QUERY_ARRAY_LIMIT = 100;
 const PAGE_SIZE = 100;
 const MAX_DOCS = 10_000;
-
-function chunkValues<T>(values: T[], size: number) {
-    const chunks: T[][] = [];
-    for (let index = 0; index < values.length; index += size) {
-        chunks.push(values.slice(index, index + size));
-    }
-    return chunks;
-}
 
 async function listAllServerDocuments(serverId: string, collectionId: string) {
     const { databases } = getServerClient();
@@ -182,31 +174,22 @@ export async function GET(request: Request, context: RouteContext) {
 
         for (const membership of memberships) {
             const userId = membership.userId as string;
-            try {
-                const profile = profilesByUserId.get(userId);
+            const profile = profilesByUserId.get(userId);
 
-                if (!profile) {
-                    orphanUserIds.push(userId);
-                    continue;
-                }
-
-                members.push({
-                    userId,
-                    userName: profile.userName as string | undefined,
-                    displayName: profile.displayName as string | undefined,
-                    avatarUrl: profile.avatarUrl as string | undefined,
-                    roleIds: roleMap.get(userId) || [],
-                    isBanned: bannedUserIds.has(userId),
-                    isMuted: mutedUserIds.has(userId),
-                });
-            } catch (error) {
-                logger.error("Failed to enrich membership", {
-                    serverId,
-                    userId,
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                });
+            if (!profile) {
+                orphanUserIds.push(userId);
+                continue;
             }
+
+            members.push({
+                userId,
+                userName: profile.userName as string | undefined,
+                displayName: profile.displayName as string | undefined,
+                avatarUrl: profile.avatarUrl as string | undefined,
+                roleIds: roleMap.get(userId) || [],
+                isBanned: bannedUserIds.has(userId),
+                isMuted: mutedUserIds.has(userId),
+            });
         }
 
         if (orphanUserIds.length > 0) {

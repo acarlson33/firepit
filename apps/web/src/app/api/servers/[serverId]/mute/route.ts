@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { getServerSession } from "@/lib/auth-server";
-import { muteServer, unmuteServer } from "@/lib/notification-settings";
+import { muteServer, unmuteServer, isMuteExpired } from "@/lib/notification-settings";
 import { invalidateNotificationSettingsCache } from "@/lib/notification-triggers";
-import { returnUnauthorized, returnForbidden } from "@/lib/newrelic-utils";
+import { logger, returnUnauthorized, returnForbidden } from "@/lib/newrelic-utils";
+import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import { getServerClient } from "@/lib/appwrite-server";
+import { getEnvConfig } from "@/lib/appwrite-core";
 import type { MuteDuration, NotificationLevel } from "@/lib/types";
 
 interface MuteRequestBody {
@@ -31,11 +34,16 @@ export async function POST(
 
 		const { serverId } = await params;
 
-		if (!serverId) {
-			return NextResponse.json(
-				{ error: "serverId is required" },
-				{ status: 400 }
-			);
+		const { databases } = getServerClient();
+		const env = getEnvConfig();
+		const access = await getServerPermissionsForUser(
+			databases,
+			env,
+			serverId,
+			user.$id,
+		);
+		if (!access.isMember) {
+			return returnForbidden();
 		}
 
 		const body = (await request.json()) as MuteRequestBody;
@@ -79,18 +87,18 @@ export async function POST(
 
 		return NextResponse.json({
 			serverId,
-			muted: !!serverOverride,
+			muted:
+				Boolean(serverOverride) &&
+				!isMuteExpired(serverOverride?.mutedUntil),
 			mutedUntil: serverOverride?.mutedUntil,
 			level: serverOverride?.level,
 		});
 	} catch (error) {
+		logger.error("Failed to update server mute settings", {
+			error: error instanceof Error ? error.message : String(error),
+		});
 		return NextResponse.json(
-			{
-				error:
-					error instanceof Error
-						? error.message
-						: "Failed to update server mute settings",
-			},
+			{ error: "Failed to update server mute settings" },
 			{ status: 500 }
 		);
 	}

@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
+import { getChannelAccessForUser } from "@/lib/server-channel-access";
 import type { Message } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
 import {
@@ -12,6 +13,7 @@ import {
     setTransactionName,
     trackApiCall,
     addTransactionAttributes,
+    returnForbidden,
 } from "@/lib/newrelic-utils";
 
 type RouteContext = {
@@ -60,53 +62,93 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        // Get the current message
-        const message = (await databases.getDocument(
-            env.databaseId,
-            env.collections.messages,
-            messageId,
-        )) as unknown as Message;
+        const maxUpdateAttempts = 3;
+        let updatedMessage: Message | null = null;
 
-        const reactions = parseReactions(message.reactions);
+        for (let attempt = 0; attempt < maxUpdateAttempts; attempt += 1) {
+            // Get the current message
+            const message = (await databases.getDocument(
+                env.databaseId,
+                env.collections.messages,
+                messageId,
+            )) as unknown as Message;
 
-        // Find existing reaction for this emoji
-        const existingReaction = reactions.find((r) => r.emoji === emoji);
-
-        if (existingReaction) {
-            // Check if user already reacted with this emoji
-            if (existingReaction.userIds.includes(user.$id)) {
-                logger.info("User already reacted with this emoji", {
-                    messageId,
-                    userId: user.$id,
-                    emoji,
-                });
-                return NextResponse.json(
-                    { error: "You already reacted with this emoji" },
-                    { status: 400 },
+            if (message.channelId) {
+                const access = await getChannelAccessForUser(
+                    databases,
+                    env,
+                    message.channelId,
+                    user.$id,
                 );
+                if (!access.isMember || !access.canRead) {
+                    return returnForbidden();
+                }
             }
 
-            // Add user to existing reaction
-            existingReaction.userIds.push(user.$id);
-            existingReaction.count = existingReaction.userIds.length;
-        } else {
-            // Create new reaction
-            reactions.push({
-                emoji,
-                userIds: [user.$id],
-                count: 1,
-            });
+            const reactions = parseReactions(message.reactions);
+
+            // Find existing reaction for this emoji
+            const existingReaction = reactions.find((r) => r.emoji === emoji);
+
+            if (existingReaction) {
+                // Check if user already reacted with this emoji
+                if (existingReaction.userIds.includes(user.$id)) {
+                    logger.info("User already reacted with this emoji", {
+                        messageId,
+                        userId: user.$id,
+                        emoji,
+                    });
+                    return NextResponse.json(
+                        { error: "You already reacted with this emoji" },
+                        { status: 400 },
+                    );
+                }
+
+                // Add user to existing reaction
+                existingReaction.userIds.push(user.$id);
+                existingReaction.count = existingReaction.userIds.length;
+            } else {
+                // Create new reaction
+                reactions.push({
+                    emoji,
+                    userIds: [user.$id],
+                    count: 1,
+                });
+            }
+
+            // Update the message with new reactions
+            try {
+                updatedMessage = (await databases.updateDocument(
+                    env.databaseId,
+                    env.collections.messages,
+                    messageId,
+                    {
+                        reactions: JSON.stringify(reactions),
+                    },
+                )) as unknown as Message;
+                break;
+            } catch (updateError) {
+                const isConflict =
+                    !!updateError &&
+                    typeof updateError === "object" &&
+                    (updateError as { code?: unknown }).code === 409;
+                if (!isConflict) {
+                    throw updateError;
+                }
+                logger.warn("Reaction update conflict, retrying", {
+                    attempt: attempt + 1,
+                    messageId,
+                    emoji,
+                });
+            }
         }
 
-        // Update the message with new reactions
-        const updatedMessage = (await databases.updateDocument(
-            env.databaseId,
-            env.collections.messages,
-            messageId,
-            {
-                reactions: JSON.stringify(reactions),
-            },
-        )) as unknown as Message;
+        if (!updatedMessage) {
+            return NextResponse.json(
+                { error: "Failed to add reaction" },
+                { status: 500 },
+            );
+        }
 
         const duration = Date.now() - startTime;
         trackApiCall(
@@ -120,7 +162,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             messageId,
             userId: user.$id,
             emoji,
-            totalReactions: reactions.length,
+            totalReactions: parseReactions(updatedMessage.reactions).length,
         });
 
         return NextResponse.json({
@@ -190,63 +232,103 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        // Get the current message
-        const message = (await databases.getDocument(
-            env.databaseId,
-            env.collections.messages,
-            messageId,
-        )) as unknown as Message;
+        const maxUpdateAttempts = 3;
+        let updatedMessage: Message | null = null;
 
-        let reactions = parseReactions(message.reactions);
-
-        // Find existing reaction for this emoji
-        const existingReaction = reactions.find((r) => r.emoji === emoji);
-
-        if (!existingReaction) {
-            logger.info("Reaction not found", {
+        for (let attempt = 0; attempt < maxUpdateAttempts; attempt += 1) {
+            // Get the current message
+            const message = (await databases.getDocument(
+                env.databaseId,
+                env.collections.messages,
                 messageId,
-                userId: user.$id,
-                emoji,
-            });
+            )) as unknown as Message;
+
+            if (message.channelId) {
+                const access = await getChannelAccessForUser(
+                    databases,
+                    env,
+                    message.channelId,
+                    user.$id,
+                );
+                if (!access.isMember || !access.canRead) {
+                    return returnForbidden();
+                }
+            }
+
+            let reactions = parseReactions(message.reactions);
+
+            // Find existing reaction for this emoji
+            const existingReaction = reactions.find((r) => r.emoji === emoji);
+
+            if (!existingReaction) {
+                logger.info("Reaction not found", {
+                    messageId,
+                    userId: user.$id,
+                    emoji,
+                });
+                return NextResponse.json(
+                    { error: "Reaction not found" },
+                    { status: 404 },
+                );
+            }
+
+            // Check if user has reacted with this emoji
+            if (!existingReaction.userIds.includes(user.$id)) {
+                logger.info("User has not reacted with this emoji", {
+                    messageId,
+                    userId: user.$id,
+                    emoji,
+                });
+                return NextResponse.json(
+                    { error: "You have not reacted with this emoji" },
+                    { status: 400 },
+                );
+            }
+
+            // Remove user from reaction
+            existingReaction.userIds = existingReaction.userIds.filter(
+                (id) => id !== user.$id,
+            );
+            existingReaction.count = existingReaction.userIds.length;
+
+            // If no users left, remove the entire reaction
+            if (existingReaction.count === 0) {
+                reactions = reactions.filter((r) => r.emoji !== emoji);
+            }
+
+            // Update the message with new reactions
+            try {
+                updatedMessage = (await databases.updateDocument(
+                    env.databaseId,
+                    env.collections.messages,
+                    messageId,
+                    {
+                        reactions: JSON.stringify(reactions),
+                    },
+                )) as unknown as Message;
+                break;
+            } catch (updateError) {
+                const isConflict =
+                    !!updateError &&
+                    typeof updateError === "object" &&
+                    (updateError as { code?: unknown }).code === 409;
+                if (!isConflict) {
+                    throw updateError;
+                }
+                logger.warn("Reaction update conflict, retrying", {
+                    attempt: attempt + 1,
+                    messageId,
+                    emoji,
+                });
+            }
+        }
+
+        if (!updatedMessage) {
             return NextResponse.json(
-                { error: "Reaction not found" },
-                { status: 404 },
+                { error: "Failed to remove reaction" },
+                { status: 500 },
             );
         }
-
-        // Check if user has reacted with this emoji
-        if (!existingReaction.userIds.includes(user.$id)) {
-            logger.info("User has not reacted with this emoji", {
-                messageId,
-                userId: user.$id,
-                emoji,
-            });
-            return NextResponse.json(
-                { error: "You have not reacted with this emoji" },
-                { status: 400 },
-            );
-        }
-
-        // Remove user from reaction
-        existingReaction.userIds = existingReaction.userIds.filter(
-            (id) => id !== user.$id,
-        );
-        existingReaction.count = existingReaction.userIds.length;
-
-        // If no users left, remove the entire reaction
-        if (existingReaction.count === 0) {
-            reactions = reactions.filter((r) => r.emoji !== emoji);
-        }
-
-        // Update the message with new reactions
-        const updatedMessage = (await databases.updateDocument(
-            env.databaseId,
-            env.collections.messages,
-            messageId,
-            {
-                reactions: JSON.stringify(reactions),
-            },
-        )) as unknown as Message;
 
         const duration = Date.now() - startTime;
         trackApiCall(
@@ -260,7 +342,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
             messageId,
             userId: user.$id,
             emoji,
-            totalReactions: reactions.length,
+            totalReactions: parseReactions(updatedMessage.reactions).length,
         });
 
         return NextResponse.json({

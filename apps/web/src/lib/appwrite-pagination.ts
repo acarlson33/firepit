@@ -74,6 +74,40 @@ export type ListPagesResult = {
     truncated: boolean;
 };
 
+export function chunkValues<T>(values: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < values.length; index += size) {
+        chunks.push(values.slice(index, index + size));
+    }
+    return chunks;
+}
+
+export async function mapWithConcurrency<T, R>(params: {
+    items: T[];
+    concurrency: number;
+    mapper: (item: T) => Promise<R>;
+}): Promise<R[]> {
+    const { items, concurrency, mapper } = params;
+    if (items.length === 0) {
+        return [];
+    }
+
+    const workerCount = Math.min(Math.max(1, concurrency), items.length);
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+
+    const workers = Array.from({ length: workerCount }, async () => {
+        while (nextIndex < items.length) {
+            const currentIndex = nextIndex;
+            nextIndex += 1;
+            results[currentIndex] = await mapper(items[currentIndex]);
+        }
+    });
+
+    await Promise.all(workers);
+    return results;
+}
+
 /**
  * Lists documents across pages using cursor pagination when available.
  * - `logger` controls warning/error visibility; defaults to a no-op logger.
@@ -169,8 +203,13 @@ export async function listPages(params: {
 
         const pageDocs = response.documents ?? [];
         for (const document of pageDocs) {
-            if (maxDocs && documents.length >= maxDocs) {
-                throw new Error(`Pagination exceeded maxDocs (${maxDocs}) for collection ${collectionId}`);
+            if (typeof maxDocs === "number" && documents.length >= maxDocs) {
+                logger.warn("Pagination reached maxDocs", {
+                    collectionId,
+                    context: warningContext,
+                    maxDocs,
+                });
+                return { documents, truncated: true };
             }
             documents.push(document as Record<string, unknown>);
         }

@@ -8,6 +8,10 @@ import { GET } from "@/app/api/profile/[userId]/route";
 vi.mock("@/lib/appwrite-profiles", () => ({
 	getUserProfile: vi.fn(),
 	getAvatarUrl: vi.fn((fileId) => `https://example.com/avatar/${fileId}`),
+	getProfileBackgroundUrl: vi.fn((fileId) => `https://example.com/bg/${fileId}`),
+	getPredefinedAvatarFrameUrlByPresetId: vi.fn((presetId) =>
+		presetId ? `https://example.com/frame/${presetId}` : undefined,
+	),
 }));
 
 vi.mock("@/lib/appwrite-status", () => ({
@@ -144,7 +148,7 @@ describe("GET /api/profile/[userId]", () => {
 		expect(data.error).toBe("Failed to fetch profile");
 	});
 
-	it("should handle status fetch errors gracefully", async () => {
+	it("should tolerate status fetch errors gracefully", async () => {
 		const mockProfile = {
 			userId: "user123",
 			displayName: "Test User",
@@ -163,9 +167,9 @@ describe("GET /api/profile/[userId]", () => {
 		const response = await GET({} as Request, { params });
 		const data = await response.json();
 
-		// Should still return 500 since status fetch failed
-		expect(response.status).toBe(500);
-		expect(data.error).toBe("Failed to fetch profile");
+		// Status fetch failures should not fail the profile response
+		expect(response.status).toBe(200);
+		expect(data.status).toBeUndefined();
 	});
 
 	it("should return all profile fields correctly", async () => {

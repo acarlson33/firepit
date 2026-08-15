@@ -13,8 +13,6 @@ import {
     trackApiCall,
     addTransactionAttributes,
     recordEvent,
-    returnUnauthorized,
-    returnForbidden,
 } from "@/lib/newrelic-utils";
 
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
@@ -104,14 +102,20 @@ function hasPrefix(bytes: Uint8Array, signature: number[]) {
 function matchesImageSignature(mimeType: string, bytes: Uint8Array) {
     if (mimeType === "image/jpeg") {
         return hasPrefix(bytes, [0xff, 0xd8, 0xff]);
-    } else if (mimeType === "image/png") {
+    }
+
+    if (mimeType === "image/png") {
         return hasPrefix(
             bytes,
             [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
         );
-    } else if (mimeType === "image/gif") {
+    }
+
+    if (mimeType === "image/gif") {
         return hasPrefix(bytes, [0x47, 0x49, 0x46, 0x38]);
-    } else if (mimeType === "image/webp") {
+    }
+
+    if (mimeType === "image/webp") {
         if (bytes.length < 12) {
             return false;
         }

@@ -6,14 +6,12 @@ import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import { listInboxItems } from "@/lib/inbox";
-import { logger, recordEvent,
-    returnUnauthorized,
-    returnForbidden,
-} from "@/lib/newrelic-utils";
+import { logger, recordEvent } from "@/lib/newrelic-utils";
 import { upsertThreadReads } from "@/lib/thread-read-store";
 import type { InboxContextKind, InboxItemKind } from "@/lib/types";
 import { Query, type Models } from "node-appwrite";
 import { apiCache } from "@/lib/cache-utils";
+import { chunkValues } from "@/lib/appwrite-pagination";
 import { compareInboxVsDmUnreadThreads } from "@/lib/unread-consistency";
 
 const VALID_KINDS: InboxItemKind[] = ["message", "mention", "thread"];
@@ -402,18 +400,18 @@ export async function GET(request: NextRequest) {
         );
     }
 
+    if (contextKind === null) {
+        return NextResponse.json(
+            { error: "contextKind must be one of channel,conversation" },
+            { status: 400 },
+        );
+    }
+
     if ((contextId && !contextKind) || (!contextId && contextKind)) {
         return NextResponse.json(
             {
                 error: "contextId and contextKind must be provided together",
             },
-            { status: 400 },
-        );
-    }
-
-    if (contextKind === null) {
-        return NextResponse.json(
-            { error: "contextKind must be one of channel,conversation" },
             { status: 400 },
         );
     }
@@ -598,20 +596,26 @@ export async function PATCH(request: NextRequest) {
         const { databases } = getAdminClient();
         let updatedMentionCount = 0;
         if (persistedItemIds.length > 0) {
-            const documents = await databases.listDocuments(
-                env.databaseId,
-                env.collections.inboxItems,
-                [
-                    Query.equal("$id", persistedItemIds),
-                    Query.equal("userId", session.$id),
-                    Query.limit(persistedItemIds.length),
-                ],
-            );
+            const documents = (
+                await Promise.all(
+                    chunkValues(persistedItemIds, 100).map((idChunk) =>
+                        databases.listDocuments(
+                            env.databaseId,
+                            env.collections.inboxItems,
+                            [
+                                Query.equal("$id", idChunk),
+                                Query.equal("userId", session.$id),
+                                Query.limit(idChunk.length),
+                            ],
+                        ),
+                    ),
+                )
+            ).flatMap((page) => page.documents);
 
             updatedMentionCount += await runBatchedUpdates({
                 batchConcurrency: UPDATE_BATCH_CONCURRENCY,
                 batchSize: UPDATE_BATCH_SIZE,
-                documents: documents.documents,
+                documents,
                 getDocumentId: (document) => String(document.$id),
                 loggerMessage: "Failed to mark inbox item as read",
                 updater: (document) =>
@@ -626,36 +630,36 @@ export async function PATCH(request: NextRequest) {
             });
         }
 
-        const threadUpsertResults = await Promise.allSettled(
-            Array.from(threadReadWrites.values()).map((entry) =>
+        const threadReadEntries = Array.from(threadReadWrites.values());
+        const updatedThreadContextCount = await runBatchedUpdates({
+            batchConcurrency: UPDATE_BATCH_CONCURRENCY,
+            batchSize: UPDATE_BATCH_SIZE,
+            documents: threadReadEntries,
+            getDocumentId: (entry) => entry.contextId,
+            loggerContext: {
+                contextId: contextId ?? null,
+                contextKind: contextKind ?? null,
+                userId: session.$id,
+            },
+            loggerMessage: "Failed to upsert thread read states",
+            updater: (entry) =>
                 upsertThreadReads({
                     contextId: entry.contextId,
                     contextType: entry.contextType,
                     reads: entry.reads,
                     userId: session.$id,
                 }),
-            ),
-        );
+        });
 
-        const updatedThreadContextCount = threadUpsertResults.filter(
-            (result) => result.status === "fulfilled",
-        ).length;
-        const failedThreadUpserts = threadUpsertResults.filter(
-            (result) => result.status === "rejected",
-        );
+        const failedThreadUpserts =
+            threadReadEntries.length - updatedThreadContextCount;
 
-        if (failedThreadUpserts.length > 0) {
-            const reasons = failedThreadUpserts.map((result) =>
-                result.reason instanceof Error
-                    ? result.reason.message
-                    : String(result.reason),
-            );
+        if (failedThreadUpserts > 0) {
             logger.error("Failed to upsert thread read states", {
                 contextId: contextId ?? null,
                 contextKind: contextKind ?? null,
-                failureCount: failedThreadUpserts.length,
+                failureCount: failedThreadUpserts,
                 userId: session.$id,
-                reasons,
             });
 
             return NextResponse.json(

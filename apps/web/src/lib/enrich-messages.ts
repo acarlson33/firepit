@@ -17,6 +17,8 @@ type BatchProfileLookup = {
     visibleUserIds: Set<string> | null;
 };
 
+const PROFILE_VISIBILITY_CACHE_TTL_MS = 60 * 1000;
+
 /**
  * Batch-fetch profiles via the Next.js API route (client-safe).
  * Uses the /api/profiles/batch endpoint so no server SDK is needed.
@@ -43,9 +45,11 @@ async function fetchProfilesBatch(
         });
 
         if (!response.ok) {
+            // Fail closed: a non-ok response means visibility is unknown, so
+            // hide messages instead of showing ones we couldn't verify.
             return {
                 profileMap,
-                visibleUserIds: null,
+                visibleUserIds: new Set(),
             };
         }
 
@@ -56,6 +60,7 @@ async function fetchProfilesBatch(
                     userId: string;
                     displayName?: string;
                     pronouns?: string;
+                    avatarFileId?: string;
                     avatarUrl?: string;
                     avatarFramePreset?: string;
                     avatarFrameUrl?: string;
@@ -69,6 +74,7 @@ async function fetchProfilesBatch(
                 userId: uid,
                 displayName: profile.displayName,
                 pronouns: profile.pronouns,
+                avatarFileId: profile.avatarFileId,
                 avatarUrl: profile.avatarUrl,
                 avatarFramePreset: profile.avatarFramePreset,
                 avatarFrameUrl: profile.avatarFrameUrl,
@@ -82,11 +88,12 @@ async function fetchProfilesBatch(
                 : null,
         };
     } catch {
-        // Batch failed — return empty map; callers handle gracefully
+        // Batch failed — fail closed for visibility filtering (empty set hides
+        // unverifiable messages instead of showing them all)
     }
     return {
         profileMap,
-        visibleUserIds: null,
+        visibleUserIds: new Set(),
     };
 }
 
@@ -182,35 +189,58 @@ export async function enrichMessagesWithProfiles(
  * Note: Reply context should be enriched by the caller if needed (using existing messages)
  *
  * @param {{ $id: string; userId: string; userName?: string | undefined; text: string; $createdAt: string; channelId?: string | undefined; serverId?: string | undefined; editedAt?: string | undefined; removedAt?: string | undefined; removedBy?: string | undefined; imageFileId?: string | undefined; imageUrl?: string | undefined; attachments?: FileAttachment[] | undefined; replyToId?: string | undefined; threadId?: string | undefined; threadMessageCount?: number | undefined; threadParticipants?: string[] | undefined; lastThreadReplyAt?: string | undefined; mentions?: string[] | undefined; reactions?: { emoji: string; userIds: string[]; count: number; }[] | undefined; displayName?: string | undefined; avatarFileId?: string | undefined; avatarUrl?: string | undefined; pronouns?: string | undefined; replyTo?: { text: string; userName?: string | undefined; displayName?: string | undefined; } | undefined; threadReplyCount?: number | undefined; isPinned?: boolean | undefined; pinnedAt?: string | undefined; pinnedBy?: string | undefined; }} message - The message value.
+ * @param {string} [viewerId] - The current viewer's user id. Visibility is viewer-specific, so the cached result is scoped by it.
  * @returns {Promise<Message | null>} The return value.
  */
 export async function enrichMessageWithProfile(
     message: Message,
+    viewerId?: string | null,
 ): Promise<Message | null> {
     try {
-        // Use cache with deduplication to avoid redundant profile fetches
-        const lookup = await apiCache.dedupe(
-            `profile:${message.userId}`,
-            async () => {
-                const { profileMap, visibleUserIds } = await fetchProfilesBatch(
-                    [message.userId],
-                );
+        // Cache profile data (viewer-independent) separately from the
+        // viewer-specific visibility result so one viewer's result is never
+        // reused for another viewer.
+        const profileKey = `profile:${message.userId}`;
+        const visibilityKey = viewerId
+            ? `profile-visibility:${viewerId}:${message.userId}`
+            : null;
 
-                return {
-                    profile: profileMap.get(message.userId) ?? null,
-                    isVisible: visibleUserIds
-                        ? visibleUserIds.has(message.userId)
-                        : true,
-                };
-            },
-            CACHE_TTL.PROFILES,
+        const cachedProfile = apiCache.get<{ profile: BatchProfileData | null }>(
+            profileKey,
         );
+        const cachedVisibility =
+            visibilityKey !== null ? apiCache.get<boolean>(visibilityKey) : null;
 
-        if (!lookup.isVisible) {
+        let profile: BatchProfileData | null;
+        let isVisible: boolean;
+
+        if (cachedProfile !== null && cachedVisibility !== null) {
+            profile = cachedProfile.profile;
+            isVisible = cachedVisibility;
+        } else {
+            const { profileMap, visibleUserIds } = await fetchProfilesBatch([
+                message.userId,
+            ]);
+            profile = profileMap.get(message.userId) ?? null;
+            isVisible = visibleUserIds
+                ? visibleUserIds.has(message.userId)
+                : true;
+
+            apiCache.set(profileKey, { profile }, CACHE_TTL.PROFILES);
+            if (visibilityKey !== null) {
+                apiCache.set(
+                    visibilityKey,
+                    isVisible,
+                    PROFILE_VISIBILITY_CACHE_TTL_MS,
+                );
+            }
+        }
+
+        if (!isVisible) {
             return null;
         }
 
-        if (!lookup.profile) {
+        if (!profile) {
             return message;
         }
 
@@ -220,28 +250,28 @@ export async function enrichMessageWithProfile(
             reactions: parseReactions(message.reactions),
         };
 
-        if (lookup.profile.displayName !== undefined) {
-            enriched.displayName = lookup.profile.displayName;
+        if (profile.displayName !== undefined) {
+            enriched.displayName = profile.displayName;
         }
 
-        if (lookup.profile.pronouns !== undefined) {
-            enriched.pronouns = lookup.profile.pronouns;
+        if (profile.pronouns !== undefined) {
+            enriched.pronouns = profile.pronouns;
         }
 
-        if (lookup.profile.avatarFileId !== undefined) {
-            enriched.avatarFileId = lookup.profile.avatarFileId;
+        if (profile.avatarFileId !== undefined) {
+            enriched.avatarFileId = profile.avatarFileId;
         }
 
-        if (lookup.profile.avatarUrl !== undefined) {
-            enriched.avatarUrl = lookup.profile.avatarUrl;
+        if (profile.avatarUrl !== undefined) {
+            enriched.avatarUrl = profile.avatarUrl;
         }
 
-        if (lookup.profile.avatarFramePreset !== undefined) {
-            enriched.avatarFramePreset = lookup.profile.avatarFramePreset;
+        if (profile.avatarFramePreset !== undefined) {
+            enriched.avatarFramePreset = profile.avatarFramePreset;
         }
 
-        if (lookup.profile.avatarFrameUrl !== undefined) {
-            enriched.avatarFrameUrl = lookup.profile.avatarFrameUrl;
+        if (profile.avatarFrameUrl !== undefined) {
+            enriched.avatarFrameUrl = profile.avatarFrameUrl;
         }
 
         return enriched;

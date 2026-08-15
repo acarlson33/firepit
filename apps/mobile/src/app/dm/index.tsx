@@ -1,5 +1,6 @@
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
     FlatList,
     Pressable,
@@ -127,6 +128,8 @@ export default function DirectMessageListScreen() {
 
         void loadConversations();
     }, [readyToFetch, loadConversations]);
+
+    useRetryOnReconnect(loadState === "error", loadConversations);
 
     return (
         <AuthRouteGuard>

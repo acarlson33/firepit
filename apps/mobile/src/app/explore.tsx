@@ -1,5 +1,6 @@
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
     Pressable,
     ScrollView,
@@ -156,6 +157,8 @@ export default function SessionScreen() {
     useEffect(() => {
         void loadServers();
     }, [loadServers]);
+
+    useRetryOnReconnect(serverLoadState === "error", loadServers);
 
     return (
         <AuthRouteGuard>

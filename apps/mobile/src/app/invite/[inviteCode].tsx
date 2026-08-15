@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -69,6 +70,8 @@ export default function InviteScreen() {
     useEffect(() => {
         void loadInvite();
     }, [loadInvite]);
+
+    useRetryOnReconnect(loadState === "error", loadInvite);
 
     const serverId = invite?.serverId ?? null;
     const handleJoin = useCallback(async () => {

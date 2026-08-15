@@ -3,31 +3,27 @@ import {
     listReports,
     resolveReport,
     clampLimit,
+    type ReportStatus,
 } from "@/lib/appwrite-reports";
 import { getProfilesByUserIds } from "@/lib/appwrite-profiles";
 import { recordAudit } from "@/lib/appwrite-audit";
 import { logger, recordError } from "@/lib/newrelic-utils";
 import { requireModerator } from "@/lib/auth-server";
+import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 
 export async function GET(request: Request) {
     try {
-        const { user } = await requireModerator();
+        await requireModerator();
 
         const { searchParams } = new URL(request.url);
         const limit = clampLimit(searchParams.get("limit"));
-        const cursor =
-            typeof searchParams.get("cursor") === "string"
-                ? searchParams.get("cursor")
-                : undefined;
-        const status =
-            typeof searchParams.get("status") === "string" &&
-                ["pending", "resolved", "dismissed"].includes(
-                    searchParams.get("status")!,
-                )
-                ? (searchParams.get("status") as
-                    | "pending"
-                    | "resolved"
-                    | "dismissed")
+        const cursor = searchParams.get("cursor")?.trim() || undefined;
+        const rawStatus = searchParams.get("status")?.trim();
+        const status: ReportStatus | undefined =
+            rawStatus === "pending" ||
+            rawStatus === "resolved" ||
+            rawStatus === "dismissed"
+                ? rawStatus
                 : undefined;
 
         const { items, nextCursor } = await listReports({
@@ -199,11 +195,17 @@ export async function POST(request: Request) {
                 { status: 403 },
             );
         }
+        if (isDocumentNotFoundError(error)) {
+            return NextResponse.json(
+                { error: "Report not found" },
+                { status: 404 },
+            );
+        }
         logger.error("Failed to resolve report", {
             error: error instanceof Error ? error.message : String(error),
         });
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : "Failed to resolve report" },
+            { error: "Failed to resolve report" },
             { status: 500 },
         );
     }

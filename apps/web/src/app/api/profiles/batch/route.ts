@@ -15,15 +15,12 @@ import {
     setTransactionName,
     trackApiCall,
     addTransactionAttributes,
-    returnUnauthorized,
-    returnForbidden,
 } from "@/lib/newrelic-utils";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
 import { normalizeStatus } from "@/lib/status-normalization";
 import { apiCache } from "@/lib/cache-utils";
 
-const env = getEnvConfig();
 const PROFILES_BATCH_CACHE_TTL_MS = 10 * 1000;
 
 function canUseProfilesBatchCache(): boolean {
@@ -62,11 +59,22 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const body = (await request.json()) as { userIds: string[] };
-        const { userIds } = body;
+        let body: { userIds?: unknown };
+        try {
+            body = await request.json();
+        } catch {
+            return NextResponse.json(
+                { error: "Invalid JSON body" },
+                { status: 400 },
+            );
+        }
 
-        if (!Array.isArray(userIds) || userIds.length === 0) {
-            logger.warn("Invalid batch profile request", { userIds });
+        const rawUserIds = body?.userIds;
+
+        if (!Array.isArray(rawUserIds) || rawUserIds.length === 0) {
+            logger.warn("Invalid batch profile request", {
+                userIds: rawUserIds,
+            });
             return NextResponse.json(
                 { error: "userIds array is required" },
                 { status: 400 },
@@ -74,16 +82,29 @@ export async function POST(request: NextRequest) {
         }
 
         // Limit batch size to prevent abuse
-        if (userIds.length > 100) {
-            logger.warn("Batch size too large", { count: userIds.length });
+        if (rawUserIds.length > 100) {
+            logger.warn("Batch size too large", { count: rawUserIds.length });
             return NextResponse.json(
                 { error: "Maximum 100 userIds per request" },
                 { status: 400 },
             );
         }
 
-        // Deduplicate user IDs
+        const userIds = rawUserIds.filter(
+            (userId): userId is string =>
+                typeof userId === "string" && userId.length > 0,
+        );
         const uniqueUserIds = [...new Set(userIds)];
+
+        if (uniqueUserIds.length === 0) {
+            logger.warn("Invalid batch profile request", {
+                userIds: rawUserIds,
+            });
+            return NextResponse.json(
+                { error: "userIds array is required" },
+                { status: 400 },
+            );
+        }
 
         const relationshipMap = await getRelationshipMap(
             session.$id,
@@ -108,6 +129,7 @@ export async function POST(request: NextRequest) {
             count: visibleUserIds.length,
         });
 
+        const env = getEnvConfig();
         const { databases } = getServerClient();
 
         // Fetch all visible profiles and statuses in parallel using batched reads.
@@ -256,7 +278,8 @@ export async function POST(request: NextRequest) {
 
         trackApiCall("/api/profiles/batch", "POST", 200, fetchDuration, {
             operation: "batchFetchProfiles",
-            requestedCount: uniqueUserIds.length,
+            requestedCount: userIds.length,
+            uniqueCount: uniqueUserIds.length,
             visibleCount: visibleUserIds.length,
             successCount,
             failedCount: visibleUserIds.length - successCount,
@@ -275,7 +298,7 @@ export async function POST(request: NextRequest) {
             visibleUserIds,
         }, {
             headers: {
-                'Cache-Control': 'private, max-age=300',
+                'Cache-Control': 'private, max-age=10',
             },
         });
     } catch (error) {

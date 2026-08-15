@@ -90,7 +90,7 @@ describe("inbox-items", () => {
 
     it("updates an existing mention inbox item instead of creating a duplicate", async () => {
         mockListDocuments.mockResolvedValue({
-            documents: [{ $id: "existing-item" }],
+            documents: [{ $id: "existing-item", userId: "user-2" }],
         });
 
         await upsertMentionInboxItems({

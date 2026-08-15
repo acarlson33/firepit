@@ -3,10 +3,7 @@ import type { NextRequest } from "next/server";
 
 import { getServerSession } from "@/lib/auth-server";
 import { listInboxDigest } from "@/lib/inbox";
-import { logger,
-    returnUnauthorized,
-    returnForbidden,
-} from "@/lib/newrelic-utils";
+import { logger } from "@/lib/newrelic-utils";
 import type { InboxContextKind } from "@/lib/types";
 
 const DEFAULT_LIMIT = 50;
@@ -25,16 +22,21 @@ function parseLimit(value: string | null) {
     return parsed;
 }
 
-function parseContextKind(value: string | null) {
+type ContextKindParseResult =
+    | { kind: InboxContextKind; valid: true }
+    | { kind: null; valid: true }
+    | { kind: null; valid: false };
+
+function parseContextKind(value: string | null): ContextKindParseResult {
     if (!value) {
-        return null;
+        return { kind: null, valid: true };
     }
 
     if (value === "channel" || value === "conversation") {
-        return value satisfies InboxContextKind;
+        return { kind: value satisfies InboxContextKind, valid: true };
     }
 
-    throw new Error("contextKind must be one of channel,conversation");
+    return { kind: null, valid: false };
 }
 
 export async function GET(request: NextRequest) {
@@ -57,17 +59,17 @@ export async function GET(request: NextRequest) {
 
     const contextId = searchParams.get("contextId")?.trim() || undefined;
 
-    let parsedContextKind: InboxContextKind | null;
-    try {
-        parsedContextKind = parseContextKind(searchParams.get("contextKind"));
-    } catch {
+    const parsedContextKind = parseContextKind(
+        searchParams.get("contextKind"),
+    );
+    if (!parsedContextKind.valid) {
         return NextResponse.json(
             { error: "contextKind must be one of channel,conversation" },
             { status: 400 },
         );
     }
 
-    const contextKind = parsedContextKind || undefined;
+    const contextKind = parsedContextKind.kind || undefined;
     if ((contextId && !contextKind) || (!contextId && contextKind)) {
         return NextResponse.json(
             {

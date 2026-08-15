@@ -43,12 +43,14 @@ vi.mock("newrelic", () => ({
 }));
 
 vi.mock("@opentelemetry/sdk-logs", () => ({
-    LoggerProvider: vi.fn().mockImplementation(() => ({
-        getLogger: vi.fn().mockImplementation(() => ({
-            emit: mockEmit,
-        })),
-        forceFlush: vi.fn().mockResolvedValue(undefined),
-    })),
+    LoggerProvider: vi.fn().mockImplementation(function () {
+        return {
+            getLogger: vi.fn().mockImplementation(() => ({
+                emit: mockEmit,
+            })),
+            forceFlush: vi.fn().mockResolvedValue(undefined),
+        };
+    }),
     BatchLogRecordProcessor: vi.fn(),
     SimpleLogRecordProcessor: vi.fn(),
 }));
@@ -74,12 +76,14 @@ vi.mock("@opentelemetry/resources", () => ({
 }));
 
 vi.mock("posthog-node", () => ({
-    PostHog: vi.fn().mockImplementation(() => ({
-        capture: mockPostHogCapture,
-        captureException: mockPostHogCaptureException,
-        flush: vi.fn().mockResolvedValue(undefined),
-        shutdown: vi.fn().mockResolvedValue(undefined),
-    })),
+    PostHog: vi.fn().mockImplementation(function () {
+        return {
+            capture: mockPostHogCapture,
+            captureException: mockPostHogCaptureException,
+            flush: vi.fn().mockResolvedValue(undefined),
+            shutdown: vi.fn().mockResolvedValue(undefined),
+        };
+    }),
 }));
 
 vi.mock("next/server", () => ({
@@ -102,7 +106,7 @@ describe("newrelic-utils", () => {
         delete process.env.POSTHOG_HOST;
         delete process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
         delete process.env.NEXT_PUBLIC_POSTHOG_HOST;
-        delete process.env.ENABLE_POSTHOG_IN_TESTS;
+        process.env.ENABLE_POSTHOG_IN_TESTS = "true";
 
         vi.spyOn(console, "log").mockImplementation(() => {});
         vi.spyOn(console, "error").mockImplementation(() => {});

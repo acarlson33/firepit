@@ -30,6 +30,10 @@ const defaultOnSignupMutexState = {
     waiters: [] as Array<() => void>,
 };
 
+// ponytail: in-process mutex; Appwrite has no conditional update and can't
+// unique-index boolean attributes. If multiple server processes write
+// defaultOnSignup concurrently, switch to a sentinel doc with a unique index.
+
 async function withDefaultOnSignupMutex<T>(task: () => Promise<T>): Promise<T> {
     if (defaultOnSignupMutexState.locked) {
         await new Promise<void>((resolve) => {
@@ -186,7 +190,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     const updates: Record<string, unknown> = {};
     const changedFields: string[] = [];
-    let defaultServersToClear: Array<{ $id: string }> = [];
     if (Object.hasOwn(payload, "name")) {
         if (typeof payload.name !== "string") {
             return NextResponse.json(
@@ -329,6 +332,26 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     );
     const previousDefaultOnSignup = serverDocument.defaultOnSignup === true;
 
+    const rollbackUpdates: Record<string, unknown> = {};
+    if (changedFields.includes("name")) {
+        rollbackUpdates.name = serverDocument.name;
+    }
+    if (changedFields.includes("description")) {
+        rollbackUpdates.description = serverDocument.description ?? null;
+    }
+    if (changedFields.includes("isPublic")) {
+        rollbackUpdates.isPublic = serverDocument.isPublic;
+    }
+    if (changedFields.includes("iconFileId")) {
+        rollbackUpdates.iconFileId = previousIconFileId ?? null;
+    }
+    if (changedFields.includes("bannerFileId")) {
+        rollbackUpdates.bannerFileId = previousBannerFileId ?? null;
+    }
+    if (changedFields.includes("defaultOnSignup")) {
+        rollbackUpdates.defaultOnSignup = previousDefaultOnSignup;
+    }
+
     let updatedServerDocument: Record<string, unknown> | undefined;
 
     if (payload.defaultOnSignup === true) {
@@ -382,7 +405,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
                 );
             }
 
-            defaultServersToClear = existingDefaultServers.filter(
+            const defaultServersToClear = existingDefaultServers.filter(
                 (defaultServer) => defaultServer.$id !== serverId,
             );
 
@@ -448,11 +471,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
                             env.databaseId,
                             env.collections.servers,
                             serverId,
-                            { defaultOnSignup: previousDefaultOnSignup },
+                            rollbackUpdates,
                         );
                     } catch (rollbackError) {
                         logger.error(
-                            "Failed to rollback current server defaultOnSignup",
+                            "Failed to rollback server settings update",
                             {
                                 serverId,
                                 userId: session.$id,

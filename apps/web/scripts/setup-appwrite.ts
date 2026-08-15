@@ -1330,10 +1330,12 @@ async function setupRoleAssignments() {
 
     await ensureIndex("role_assignments", "idx_userId", "key", ["userId"]);
     await ensureIndex("role_assignments", "idx_serverId", "key", ["serverId"]);
-    await ensureIndex("role_assignments", "idx_userId_serverId", "key", [
+    // Unique so concurrent assignment requests cannot create duplicate
+    // (userId, serverId) rows; the API retries createDocument on 409.
+    await ensureIndex("role_assignments", "idx_userId_serverId", "unique", [
         "userId",
         "serverId",
-    ]);
+    ], { recreateIfMismatched: true });
 }
 
 async function setupProfiles() {

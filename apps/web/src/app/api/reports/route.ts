@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { createHash } from "node:crypto";
 import { requireAuth } from "@/lib/auth-server";
 import {
     createReport,

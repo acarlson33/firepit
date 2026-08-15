@@ -13,10 +13,7 @@ import {
     type GiphySearchResponse,
     type TenorSearchResponse,
 } from "@/lib/gif-sticker";
-import { logger, setTransactionName, trackApiCall,
-    returnUnauthorized,
-    returnForbidden,
-} from "@/lib/newrelic-utils";
+import { logger, setTransactionName, trackApiCall } from "@/lib/newrelic-utils";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const GIPHY_BASE_URL = "https://api.giphy.com/v1/gifs/search";
@@ -150,7 +147,7 @@ export async function GET(request: NextRequest) {
         });
 
         if (!response.ok) {
-            const details = await response.text().catch(() => "");
+            const details = (await response.text().catch(() => "")).slice(0, 500);
             logger.warn("GIF search provider request failed", {
                 status: response.status,
                 details,

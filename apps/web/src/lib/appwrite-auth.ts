@@ -1,3 +1,5 @@
+import { ID } from "appwrite";
+
 import { getBrowserAccount } from "./appwrite-core";
 import type { User } from "./types";
 
@@ -17,12 +19,12 @@ export async function register(
   // Always create a fresh account instance to ensure we are in a browser context (no API key)
   const acc = getBrowserAccount();
   const res = await acc.create({
-    userId: crypto.randomUUID(),
+    userId: ID.unique(),
     email,
     password,
     name,
   });
-  return res as unknown as User;
+  return { $id: res.$id, name: res.name, email: res.email };
 }
 
 /**
@@ -56,7 +58,7 @@ export async function getCurrentUser(): Promise<User | null> {
   try {
     const acc = getBrowserAccount();
     const user = await acc.get();
-    return user as unknown as User;
+    return { $id: user.$id, name: user.name, email: user.email };
   } catch {
     return null;
   }

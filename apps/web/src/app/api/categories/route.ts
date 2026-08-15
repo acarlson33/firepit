@@ -3,7 +3,9 @@ import { ID, Query } from "node-appwrite";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
+import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { getServerSession } from "@/lib/auth-server";
+import { chunkValues, listPages } from "@/lib/appwrite-pagination";
 import {
     logger,
     returnUnauthorized,
@@ -17,18 +19,6 @@ const categoriesCollectionId = env.collections.categories;
 const channelsCollectionId = env.collections.channels;
 const rolesCollectionId = env.collections.roles;
 const QUERY_ARRAY_LIMIT = 100;
-
-function chunkValues<T>(values: T[], size: number) {
-    if (!Number.isInteger(size) || size <= 0) {
-        throw new Error("size must be a positive integer");
-    }
-
-    const chunks: T[][] = [];
-    for (let index = 0; index < values.length; index += size) {
-        chunks.push(values.slice(index, index + size));
-    }
-    return chunks;
-}
 
 function getDatabases() {
     return getServerClient().databases;
@@ -103,22 +93,20 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const [auth, categories] = await Promise.all([
-            requireServerMembership(serverId),
-            databases.listDocuments(
-                databaseId,
-                categoriesCollectionId,
-                [
-                    Query.equal("serverId", serverId),
-                    Query.orderAsc("position"),
-                    Query.limit(100),
-                ],
-            ),
-        ]);
-
+        const auth = await requireServerMembership(serverId);
         if ("response" in auth) {
             return auth.response;
         }
+
+        const categories = await databases.listDocuments(
+            databaseId,
+            categoriesCollectionId,
+            [
+                Query.equal("serverId", serverId),
+                Query.orderAsc("position"),
+                Query.limit(100),
+            ],
+        );
 
         const userRoleIds = auth.access.roleIds ?? [];
         const isOwner = auth.access.isServerOwner;
@@ -215,11 +203,22 @@ export async function PUT(request: NextRequest) {
             );
         }
 
-        const existingCategory = await databases.getDocument(
-            databaseId,
-            categoriesCollectionId,
-            body.categoryId,
-        );
+        let existingCategory: Record<string, unknown>;
+        try {
+            existingCategory = (await databases.getDocument(
+                databaseId,
+                categoriesCollectionId,
+                body.categoryId,
+            )) as Record<string, unknown>;
+        } catch (error) {
+            if (isDocumentNotFoundError(error)) {
+                return NextResponse.json(
+                    { error: "Category not found" },
+                    { status: 404 },
+                );
+            }
+            throw error;
+        }
 
         const auth = await requireManageChannelsAccess(
             String(existingCategory.serverId),
@@ -372,11 +371,22 @@ export async function DELETE(request: NextRequest) {
             );
         }
 
-        const existingCategory = await databases.getDocument(
-            databaseId,
-            categoriesCollectionId,
-            categoryId,
-        );
+        let existingCategory: Record<string, unknown>;
+        try {
+            existingCategory = (await databases.getDocument(
+                databaseId,
+                categoriesCollectionId,
+                categoryId,
+            )) as Record<string, unknown>;
+        } catch (error) {
+            if (isDocumentNotFoundError(error)) {
+                return NextResponse.json(
+                    { error: "Category not found" },
+                    { status: 404 },
+                );
+            }
+            throw error;
+        }
 
         const auth = await requireManageChannelsAccess(
             String(existingCategory.serverId),
@@ -385,20 +395,25 @@ export async function DELETE(request: NextRequest) {
             return auth.response;
         }
 
-        const linkedChannels = await databases.listDocuments(
+        const linkedChannels = await listPages({
+            databases,
             databaseId,
-            channelsCollectionId,
-            [Query.equal("categoryId", categoryId), Query.limit(100)],
-        );
+            collectionId: channelsCollectionId,
+            baseQueries: [Query.equal("categoryId", categoryId)],
+            pageSize: 100,
+            warningContext: "categories.delete.linkedChannels",
+        });
 
-        for (const channel of linkedChannels.documents) {
-            await databases.updateDocument(
-                databaseId,
-                channelsCollectionId,
-                String(channel.$id),
-                { categoryId: "", position: 0 },
-            );
-        }
+        await Promise.all(
+            linkedChannels.documents.map((channel) =>
+                databases.updateDocument(
+                    databaseId,
+                    channelsCollectionId,
+                    String(channel.$id),
+                    { categoryId: "", position: 0 },
+                ),
+            ),
+        );
 
         await databases.deleteDocument(
             databaseId,

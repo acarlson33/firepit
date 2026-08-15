@@ -16,6 +16,7 @@ type UnreadComparison = {
 const SNAPSHOT_MAX_AGE_MS = 2 * 60 * 1_000;
 const SNAPSHOT_SWEEP_INTERVAL_MS = 60_000;
 const dmUnreadSnapshotByUserId = new Map<string, DmUnreadSnapshot>();
+let sweepTimer: ReturnType<typeof setInterval> | null = null;
 
 function sweepStaleSnapshots(now = Date.now()) {
     for (const [userId, snapshot] of dmUnreadSnapshotByUserId.entries()) {
@@ -25,12 +26,16 @@ function sweepStaleSnapshots(now = Date.now()) {
     }
 }
 
-if (process.env.NODE_ENV !== "test") {
-    const timer = setInterval(() => {
+function ensureSweepTimer() {
+    if (sweepTimer || process.env.NODE_ENV === "test") {
+        return;
+    }
+
+    sweepTimer = setInterval(() => {
         sweepStaleSnapshots();
     }, SNAPSHOT_SWEEP_INTERVAL_MS);
-    if (typeof timer.unref === "function") {
-        timer.unref();
+    if (typeof sweepTimer.unref === "function") {
+        sweepTimer.unref();
     }
 }
 
@@ -45,6 +50,8 @@ export function rememberDmUnreadThreadSnapshot(params: {
     if (userId.length === 0) {
         return;
     }
+
+    ensureSweepTimer();
 
     dmUnreadSnapshotByUserId.set(userId, {
         conversationCount,

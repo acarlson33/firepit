@@ -1,5 +1,6 @@
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
     Modal,
     Pressable,
@@ -283,6 +284,8 @@ function useJoinedServers() {
     useEffect(() => {
         void refresh();
     }, [refresh]);
+
+    useRetryOnReconnect(loadState === "error", refresh);
 
     return { servers, loadState, loadError, refresh };
 }

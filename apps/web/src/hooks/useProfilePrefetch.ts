@@ -11,6 +11,8 @@ type InFlightProfileFetch = {
 };
 
 const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
+// ponytail: arbitrary cap; tune if per-user profile payloads grow large.
+const PROFILE_CACHE_MAX_SIZE = 500;
 const profileCache = new Map<string, CachedProfileEntry>();
 const inFlightProfileFetches = new Map<string, InFlightProfileFetch>();
 
@@ -29,10 +31,29 @@ function getCachedProfileValue(userId: string): unknown | undefined {
 }
 
 function setCachedProfileValue(userId: string, data: unknown): void {
+    // Evict expired entries on write so stale data cannot accumulate
+    // between reads of the same userId.
+    const now = Date.now();
+    for (const [key, entry] of profileCache) {
+        if (now - entry.cachedAt > PROFILE_CACHE_TTL_MS) {
+            profileCache.delete(key);
+        }
+    }
+
     profileCache.set(userId, {
         data,
-        cachedAt: Date.now(),
+        cachedAt: now,
     });
+
+    // Enforce the maximum cache size by dropping the oldest entries
+    // (Map preserves insertion order).
+    while (profileCache.size > PROFILE_CACHE_MAX_SIZE) {
+        const oldestKey = profileCache.keys().next().value;
+        if (oldestKey === undefined) {
+            break;
+        }
+        profileCache.delete(oldestKey);
+    }
 }
 
 function fetchProfileIntoCache(userId: string): Promise<void> {
@@ -99,6 +120,11 @@ export const profilePrefetchPool = {
         profilePrefetchPool.process().catch(() => {});
     },
 
+    cancel(userId: string) {
+        profilePrefetchPool.queue.delete(userId);
+        inFlightProfileFetches.get(userId)?.controller.abort();
+    },
+
     async process() {
         if (
             profilePrefetchPool.processing ||
@@ -112,17 +138,12 @@ export const profilePrefetchPool = {
 
         try {
             const runWorker = async (): Promise<void> => {
-                while (true) {
-                    const userId = profilePrefetchPool.dequeueNext();
-                    if (!userId) {
-                        return;
+                let userId = profilePrefetchPool.dequeueNext();
+                while (userId !== undefined) {
+                    if (getCachedProfileValue(userId) === undefined) {
+                        await fetchProfileIntoCache(userId);
                     }
-
-                    if (getCachedProfileValue(userId) !== undefined) {
-                        continue;
-                    }
-
-                    await fetchProfileIntoCache(userId);
+                    userId = profilePrefetchPool.dequeueNext();
                 }
             };
 

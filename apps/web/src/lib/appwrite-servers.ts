@@ -73,6 +73,7 @@ async function assertUserServerCreationEnabled(): Promise<void> {
     try {
         const response = await fetch("/api/feature-flags/allow-user-servers", {
             cache: "no-store",
+            signal: AbortSignal.timeout(5000),
         });
 
         if (!response.ok) {
@@ -147,7 +148,7 @@ export async function listServersPage(
 
     const items = res.documents.map((doc) => {
         const d = doc as unknown as Record<string, unknown>;
-        return mapServerDocument(d, memberCounts.get(String(d.$id)) ?? 0);
+        return mapServerDocument(d, memberCounts.counts.get(String(d.$id)) ?? 0);
     });
 
     const last = items.at(-1);
@@ -263,14 +264,44 @@ export function createServer(
                     membership = mapMembershipDocument(
                         membershipDoc as Record<string, unknown>,
                     );
-                } catch {
-                    // ignore membership creation failure
+                } catch (membershipError) {
+                    logger.error("Failed to create owner membership", {
+                        error:
+                            membershipError instanceof Error
+                                ? membershipError.message
+                                : String(membershipError),
+                        serverId: String(s.$id),
+                        userId: ownerId,
+                    });
+                    // Roll back the server document to preserve atomic creation.
+                    try {
+                        await getDatabases().deleteDocument({
+                            databaseId: DATABASE_ID,
+                            collectionId: SERVERS_COLLECTION_ID,
+                            documentId: String(s.$id),
+                        });
+                    } catch (rollbackError) {
+                        logger.error("Failed to roll back server after membership failure", {
+                            error:
+                                rollbackError instanceof Error
+                                    ? rollbackError.message
+                                    : String(rollbackError),
+                            serverId: String(s.$id),
+                        });
+                    }
+                    throw membershipError;
                 }
             }
             try {
                 await createChannel(String(s.$id), "general", ownerId);
-            } catch {
-                // ignore channel creation failure
+            } catch (channelError) {
+                logger.error("Failed to create default channel", {
+                    error:
+                        channelError instanceof Error
+                            ? channelError.message
+                            : String(channelError),
+                    serverId: String(s.$id),
+                });
             }
 
             // Get actual member count for return value

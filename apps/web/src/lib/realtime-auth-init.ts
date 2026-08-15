@@ -1,18 +1,15 @@
 /**
  * Initialize the Appwrite realtime WebSocket authentication.
  *
- * The Appwrite SDK reads `cookieFallback` from localStorage to authenticate
- * the realtime WebSocket. Since the app uses a same-origin Next.js proxy
- * (no direct cross-origin requests to Appwrite), the SDK never receives
- * `X-Fallback-Cookies` response headers, so `cookieFallback` is never
- * populated by the SDK itself.
- *
- * This module fetches the session from the server (which can read the
- * httpOnly cookie) and stores it in localStorage so the SDK can use it.
+ * This module fetches a short-lived JWT from the server (which can read the
+ * httpOnly cookie) and sets it on the shared Appwrite client, so the SDK can
+ * authenticate the realtime WebSocket without the raw session secret.
  *
  * Import and call `initRealtimeAuth()` once at app startup, before any
  * realtime subscriptions are created.
  */
+
+import { getSharedClient } from "@/lib/realtime-pool";
 
 let initPromise: Promise<void> | null = null;
 
@@ -21,38 +18,24 @@ export function initRealtimeAuth(): Promise<void> {
         return initPromise;
     }
 
-    // Already populated — nothing to do
-    if (
-        typeof window !== "undefined" &&
-        window.localStorage.getItem("cookieFallback")
-    ) {
-        return Promise.resolve();
-    }
-
     initPromise = (async () => {
-        try {
-            const response = await fetch("/api/session");
-            if (!response.ok) return;
-            const data = (await response.json()) as {
-                session?: string;
-                project?: string;
-            };
-            if (
-                data.session &&
-                data.project &&
-                typeof window !== "undefined"
-            ) {
-                window.localStorage.setItem(
-                    "cookieFallback",
-                    JSON.stringify({
-                        [`a_session_${data.project}`]: data.session,
-                    }),
-                );
-            }
-        } catch {
-            // Silent — realtime will just be unauthenticated
+        const response = await fetch("/api/session", {
+            signal: AbortSignal.timeout(8000),
+        });
+        if (!response.ok) {
+            throw new Error(
+                `Session request failed with status ${response.status}`,
+            );
         }
-    })();
+        const data = (await response.json()) as { jwt?: string };
+        if (data.jwt) {
+            getSharedClient().setJWT(data.jwt);
+        }
+    })().catch(() => {
+        // Silent — realtime will just be unauthenticated. Clear the cached
+        // promise so a later call can retry.
+        initPromise = null;
+    });
 
     return initPromise;
 }

@@ -9,6 +9,10 @@ vi.mock("@/lib/auth-server", () => ({
 	getServerSession: vi.fn(),
 }));
 
+vi.mock("next/headers", () => ({
+	headers: vi.fn(async () => ({ get: () => null })),
+}));
+
 import { getServerSession } from "@/lib/auth-server";
 
 describe("GET /api/debug/auth", () => {
@@ -41,7 +45,7 @@ describe("GET /api/debug/auth", () => {
 
 		expect(response.status).toBe(200);
 		expect(data.authenticated).toBe(false);
-		expect(data.message).toBe("No session found");
+		expect(data.userId).toBe(null);
 	});
 
 	it("should return authenticated user data when session exists", async () => {
@@ -59,8 +63,7 @@ describe("GET /api/debug/auth", () => {
 		expect(response.status).toBe(200);
 		expect(data.authenticated).toBe(true);
 		expect(data.userId).toBe("user123");
-		expect(data.email).toBe("test@example.com");
-		expect(data.name).toBe("Test User");
+		expect(data.hasAuthHeader).toBe(false);
 	});
 
 	it("should handle errors when checking session", async () => {

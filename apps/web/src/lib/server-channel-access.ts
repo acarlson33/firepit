@@ -3,6 +3,7 @@ import type { Databases } from "node-appwrite";
 
 import type { EnvConfig } from "@/lib/appwrite-core";
 import { getEffectivePermissions } from "@/lib/permissions";
+import { listPages } from "@/lib/appwrite-pagination";
 import type {
     ChannelPermissionOverride,
     EffectivePermissions,
@@ -550,11 +551,14 @@ async function computeChannelAccessForUser(
         }
     }
 
-    const overrides = await databases.listDocuments(
-        env.databaseId,
-        CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID,
-        [Query.equal("channelId", channelId), Query.limit(1000)],
-    );
+    const overrides = await listPages({
+        databases,
+        databaseId: env.databaseId,
+        collectionId: CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID,
+        baseQueries: [Query.equal("channelId", channelId)],
+        pageSize: 100,
+        warningContext: "computeChannelAccessForUser",
+    });
 
     const applicableOverrides: ChannelPermissionOverride[] = [];
     for (const doc of overrides.documents) {
@@ -588,6 +592,7 @@ async function computeChannelAccessForUser(
         serverAccess.roles,
         applicableOverrides,
         false,
+        userId,
     );
 
     const canRead = effective.readMessages;
@@ -623,4 +628,50 @@ export function clearServerChannelAccessCache(): void {
     pendingServerAccess.clear();
     channelAccessCache.clear();
     pendingChannelAccess.clear();
+}
+
+// Key-scoped invalidation. Sweeps are rare (mutation paths) and bounded by
+// MAX_ACCESS_CACHE_SIZE, so a linear scan is fine.
+export function invalidateServerAccessCacheForUser(
+    databaseId: string,
+    serverId: string,
+    userId: string,
+): void {
+    const serverKey = `${databaseId}:server:${serverId}:user:${userId}`;
+    serverAccessCache.delete(serverKey);
+    pendingServerAccess.delete(serverKey);
+
+    const channelUserSuffix = `:user:${userId}`;
+    for (const key of channelAccessCache.keys()) {
+        if (key.endsWith(channelUserSuffix)) {
+            channelAccessCache.delete(key);
+            pendingChannelAccess.delete(key);
+        }
+    }
+}
+
+export function invalidateChannelAccessCache(
+    databaseId: string,
+    channelId: string,
+): void {
+    const prefix = `${databaseId}:channel:${channelId}:user:`;
+    for (const key of channelAccessCache.keys()) {
+        if (key.startsWith(prefix)) {
+            channelAccessCache.delete(key);
+            pendingChannelAccess.delete(key);
+        }
+    }
+}
+
+export function invalidateServerAccessCacheForServer(
+    databaseId: string,
+    serverId: string,
+): void {
+    const prefix = `${databaseId}:server:${serverId}:user:`;
+    for (const key of serverAccessCache.keys()) {
+        if (key.startsWith(prefix)) {
+            serverAccessCache.delete(key);
+            pendingServerAccess.delete(key);
+        }
+    }
 }

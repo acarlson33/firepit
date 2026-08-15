@@ -124,6 +124,21 @@ describe("Me preferences route", () => {
         expect(mockUpdateProfile).not.toHaveBeenCalled();
     });
 
+    it("returns 400 for malformed JSON in PATCH", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1", name: "August" });
+
+        const request = new NextRequest("http://localhost/api/me/preferences", {
+            method: "PATCH",
+            body: "{not valid json",
+        });
+
+        const response = await PATCH(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error).toBe("Invalid JSON body");
+    });
+
     it("rejects invalid add friend header preference payloads", async () => {
         mockSession.mockResolvedValue({ $id: "user-1", name: "August" });
 

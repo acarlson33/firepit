@@ -45,7 +45,21 @@ vi.mock("@/lib/inbox", () => ({
 }));
 
 vi.mock("@/lib/thread-read-store", () => ({
+    CONCURRENT_DOCUMENT_QUERIES: 4,
     upsertThreadReads: mockUpsertThreadReads,
+    runInBatches: async <T>(params: {
+        batchSize: number;
+        items: T[];
+        worker: (item: T) => Promise<void>;
+    }) => {
+        for (let index = 0; index < params.items.length; index += params.batchSize) {
+            await Promise.all(
+                params.items
+                    .slice(index, index + params.batchSize)
+                    .map((item) => params.worker(item)),
+            );
+        }
+    },
 }));
 
 describe("inbox route", () => {
@@ -149,7 +163,7 @@ describe("inbox route", () => {
         expect(response.status).toBe(200);
         expect(mockListInboxItems).toHaveBeenCalledWith({
             contextKinds: ["conversation"],
-            kinds: ["mention", "thread"],
+            kinds: ["message", "mention", "thread"],
             limit: 50,
             userId: "user-1",
         });
@@ -201,7 +215,7 @@ describe("inbox route", () => {
         expect(response.status).toBe(200);
         expect(mockListInboxItems).toHaveBeenCalledWith({
             contextKinds: ["channel"],
-            kinds: ["mention", "thread"],
+            kinds: ["message", "mention", "thread"],
             limit: Number.POSITIVE_INFINITY,
             userId: "user-1",
         });
@@ -337,7 +351,7 @@ describe("inbox route", () => {
         expect(response.status).toBe(200);
         expect(mockListInboxItems).toHaveBeenCalledWith({
             contextKinds: ["channel"],
-            kinds: ["mention", "thread"],
+            kinds: ["message", "mention", "thread"],
             limit: Number.POSITIVE_INFINITY,
             userId: "user-1",
         });
@@ -447,7 +461,7 @@ describe("inbox route", () => {
         expect(response.status).toBe(200);
         expect(mockListInboxItems).toHaveBeenCalledWith({
             contextKinds: ["conversation"],
-            kinds: ["mention", "thread"],
+            kinds: ["message", "mention", "thread"],
             limit: Number.POSITIVE_INFINITY,
             userId: "user-1",
         });

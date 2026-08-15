@@ -1,19 +1,18 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { Query } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { getServerSession } from "@/lib/auth-server";
-import { buildPinsResponse } from "@/lib/pin-response";
-import type { Message, PinnedMessage } from "@/lib/types";
+import { getChannelAccessForUser } from "@/lib/server-channel-access";
+import { buildPinsResponse, listPinnedMessages } from "@/lib/pin-response";
 import {
     logger,
     recordError,
     setTransactionName,
     trackApiCall,
     addTransactionAttributes,
-    returnUnauthorized,
     returnForbidden,
 } from "@/lib/newrelic-utils";
 
@@ -60,28 +59,35 @@ export async function GET(request: NextRequest, context: RouteContext) {
                 env.collections.channels,
                 channelId,
             );
-        } catch {
-            return NextResponse.json(
-                { error: "Channel not found" },
-                { status: 404 },
-            );
+        } catch (error) {
+            if (isDocumentNotFoundError(error)) {
+                return NextResponse.json(
+                    { error: "Channel not found" },
+                    { status: 404 },
+                );
+            }
+            throw error;
         }
 
-        const pinDocs = await databases.listDocuments(
-            env.databaseId,
-            env.collections.pinnedMessages,
-            [
-                Query.equal("contextType", "channel"),
-                Query.equal("contextId", channelId),
-                Query.orderDesc("pinnedAt"),
-                Query.limit(50),
-            ],
+        const access = await getChannelAccessForUser(
+            databases,
+            env,
+            channelId,
+            user.$id,
         );
+        if (!access.isMember || !access.canRead) {
+            return returnForbidden();
+        }
 
-        const pins = pinDocs.documents as unknown as PinnedMessage[];
-        const messageIds = pins.map((pin) => pin.messageId);
+        const pinData = await listPinnedMessages({
+            databases,
+            env,
+            contextType: "channel",
+            contextId: channelId,
+            messageCollectionId: env.collections.messages,
+        });
 
-        if (messageIds.length === 0) {
+        if (!pinData) {
             const duration = Date.now() - startTime;
             trackApiCall(
                 "/api/channels/[channelId]/pins",
@@ -97,19 +103,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             });
         }
 
-        const messageDocs = await databases.listDocuments(
-            env.databaseId,
-            env.collections.messages,
-            [Query.equal("$id", messageIds), Query.limit(50)],
-        );
-
-        const messagesById = new Map<string, Message>();
-        for (const doc of messageDocs.documents) {
-            const message = doc as unknown as Message;
-            messagesById.set(String(message.$id), message);
-        }
-
-        const response = buildPinsResponse(pins, messagesById);
+        const response = buildPinsResponse(pinData.pins, pinData.messagesById);
 
         const duration = Date.now() - startTime;
         trackApiCall("/api/channels/[channelId]/pins", "GET", 200, duration);

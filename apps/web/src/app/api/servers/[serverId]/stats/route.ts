@@ -8,6 +8,7 @@ import { logger,
 import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { apiCache } from "@/lib/cache-utils";
 
 const envConfig = getEnvConfig();
@@ -63,23 +64,25 @@ export async function GET(
         }
 
         // Get server info to verify it exists
-        const server = await databases.getDocument(
-            DATABASE_ID,
-            SERVERS_COLLECTION_ID,
-            serverId,
-        );
-
-        if (!server) {
-            return NextResponse.json(
-                { error: "Server not found" },
-                { status: 404 },
+        try {
+            await databases.getDocument(
+                DATABASE_ID,
+                SERVERS_COLLECTION_ID,
+                serverId,
             );
+        } catch (error) {
+            if (isDocumentNotFoundError(error)) {
+                return NextResponse.json(
+                    { error: "Server not found" },
+                    { status: 404 },
+                );
+            }
+            throw error;
         }
 
         // Count recent messages (last 24 hours)
         const now = Date.now();
         const oneDayAgo = new Date(now - 24 * 60 * 60 * 1000).toISOString();
-        const statsTimeBucket = Math.floor(now / SERVER_STATS_CACHE_TTL_MS);
         const [
             membersResult,
             channelsResult,
@@ -88,7 +91,7 @@ export async function GET(
             bannedResult,
             mutedResult,
         ] = await dedupeServerStatsCache(
-            `api:servers:stats:${serverId}:${statsTimeBucket}`,
+            `api:servers:stats:${serverId}`,
             () =>
                 Promise.all([
                     databases.listDocuments(DATABASE_ID, MEMBERSHIPS_COLLECTION_ID, [
@@ -114,14 +117,14 @@ export async function GET(
                               BANNED_USERS_COLLECTION_ID,
                               [Query.equal("serverId", serverId), Query.limit(1)],
                           )
-                        : Promise.resolve({ total: 0 }),
+                        : Promise.resolve({ documents: [], total: 0 }),
                     MUTED_USERS_COLLECTION_ID
                         ? databases.listDocuments(
                               DATABASE_ID,
                               MUTED_USERS_COLLECTION_ID,
                               [Query.equal("serverId", serverId), Query.limit(1)],
                           )
-                        : Promise.resolve({ total: 0 }),
+                        : Promise.resolve({ documents: [], total: 0 }),
                 ]),
         );
 

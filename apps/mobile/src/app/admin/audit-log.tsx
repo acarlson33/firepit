@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
     ActivityIndicator,
     FlatList,
@@ -88,6 +89,8 @@ export default function AuditLogScreen() {
     useEffect(() => {
         void loadLogs();
     }, [loadLogs]);
+
+    useRetryOnReconnect(loadState === "error", loadLogs);
 
     if (!serverId) {
         return (

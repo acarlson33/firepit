@@ -4,7 +4,8 @@ import { Query } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
-import { returnUnauthorized } from "@/lib/newrelic-utils";
+import { returnUnauthorized, logger } from "@/lib/newrelic-utils";
+import { listPages } from "@/lib/appwrite-pagination";
 import type { Membership } from "@/lib/types";
 
 /**
@@ -29,33 +30,36 @@ export async function GET() {
         const { databases } = getServerClient();
         const userId = user.$id;
 
-        // Fetch all memberships for this user
-        const res = await databases.listDocuments(
-            env.databaseId,
-            membershipCollectionId,
-            [Query.equal("userId", userId), Query.limit(500)],
-        );
+        const { documents, truncated } = await listPages({
+            databases,
+            databaseId: env.databaseId,
+            collectionId: membershipCollectionId,
+            baseQueries: [Query.equal("userId", userId)],
+            pageSize: 100,
+            maxPages: 50,
+            warningContext: "memberships",
+        });
 
-        const memberships: Membership[] = res.documents.map((doc) => {
+        const memberships: Membership[] = documents.map((doc) => {
             const d = doc as unknown as Record<string, unknown>;
+            const role =
+                d.role === "owner" || d.role === "member" ? d.role : "member";
             return {
                 $id: String(d.$id),
                 serverId: String(d.serverId),
                 userId: String(d.userId),
-                role: d.role as "owner" | "member",
+                role,
                 $createdAt: String(d.$createdAt ?? ""),
             } satisfies Membership;
         });
 
-        return NextResponse.json({ memberships });
+        return NextResponse.json({ memberships, truncated });
     } catch (error) {
+        logger.error("Failed to fetch memberships", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to fetch memberships",
-            },
+            { error: "Failed to fetch memberships" },
             { status: 500 },
         );
     }

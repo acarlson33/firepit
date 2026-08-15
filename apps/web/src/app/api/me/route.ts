@@ -7,8 +7,13 @@ import { getEnvConfig } from "@/lib/appwrite-core";
 /**
  * Diagnostic endpoint to see your user ID and current roles.
  * Visit /api/me after logging in to get your user ID for bootstrap.
+ * Disabled outside development.
  */
 export async function GET() {
+    if (process.env.NODE_ENV === "production") {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     const user = await getServerSession();
 
     if (!user) {

@@ -1,5 +1,6 @@
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
     ActivityIndicator,
     FlatList,
@@ -72,6 +73,12 @@ export default function SearchScreen() {
         [accessToken, instanceUrl],
     );
 
+    const retrySearch = useCallback(() => {
+        void runSearch(query);
+    }, [query, runSearch]);
+
+    useRetryOnReconnect(loadState === "error", retrySearch);
+
     const openResult = useCallback((result: SearchMessageResult) => {
         if (result.type === "channel" && result.serverId && result.channelId) {
             router.push({
@@ -83,11 +90,15 @@ export default function SearchScreen() {
             });
             return;
         }
-
         if (result.type === "dm" && result.conversationId) {
-            router.push(
-                `/dm/${result.conversationId}?messageId=${encodeURIComponent(String(result.message.$id ?? ""))}` as never,
-            );
+            router.push(`/dm/${result.conversationId}` as never);
+            return;
+        }
+        if (result.type === "server" && result.serverId) {
+            router.push({
+                pathname: "/server/messages/[serverId]",
+                params: { serverId: result.serverId },
+            });
         }
     }, []);
 

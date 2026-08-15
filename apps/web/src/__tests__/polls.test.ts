@@ -25,6 +25,12 @@ describe("poll helpers", () => {
         );
     });
 
+    it("rejects duplicate poll options", () => {
+        expect(() =>
+            parsePollCommand('/poll "Question" | "Pizza" | "Pizza"'),
+        ).toThrow("Poll options must be unique");
+    });
+
     it("builds poll state with vote counts and voter ids", () => {
         const poll = buildMessagePoll({
             poll: {

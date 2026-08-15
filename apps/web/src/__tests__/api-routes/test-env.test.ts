@@ -30,8 +30,6 @@ describe("GET /api/test-env", () => {
 		expect(response.status).toBe(200);
 		expect(data.endpoint).toBe("https://cloud.appwrite.io/v1");
 		expect(data.projectId).toBe("test-project-id");
-		expect(data.hasServerEndpoint).toBe(true);
-		expect(data.hasServerProjectId).toBe(true);
 	});
 
 	it('should return "missing" for undefined public endpoint', async () => {
@@ -76,7 +74,7 @@ describe("GET /api/test-env", () => {
 		const response = await GET();
 		const data = await response.json();
 
-		expect(data.hasServerEndpoint).toBe(false);
+		expect(data.endpoint).toBe("https://cloud.appwrite.io/v1");
 	});
 
 	it("should return false for hasServerProjectId when not set", async () => {
@@ -91,7 +89,7 @@ describe("GET /api/test-env", () => {
 		const response = await GET();
 		const data = await response.json();
 
-		expect(data.hasServerProjectId).toBe(false);
+		expect(data.projectId).toBe("test-project-id");
 	});
 
 	it("should handle all variables missing", async () => {
@@ -108,8 +106,6 @@ describe("GET /api/test-env", () => {
 
 		expect(data.endpoint).toBe("missing");
 		expect(data.projectId).toBe("missing");
-		expect(data.hasServerEndpoint).toBe(false);
-		expect(data.hasServerProjectId).toBe(false);
 	});
 
 	it("should handle empty string values", async () => {
@@ -126,8 +122,6 @@ describe("GET /api/test-env", () => {
 
 		expect(data.endpoint).toBe("missing");
 		expect(data.projectId).toBe("missing");
-		expect(data.hasServerEndpoint).toBe(false);
-		expect(data.hasServerProjectId).toBe(false);
 	});
 
 	it("should return all four expected fields", async () => {
@@ -142,12 +136,7 @@ describe("GET /api/test-env", () => {
 		const response = await GET();
 		const data = await response.json();
 
-		expect(Object.keys(data)).toEqual([
-			"endpoint",
-			"projectId",
-			"hasServerEndpoint",
-			"hasServerProjectId",
-		]);
+		expect(Object.keys(data)).toEqual(["endpoint", "projectId"]);
 	});
 
 	it("should handle special characters in environment variables", async () => {

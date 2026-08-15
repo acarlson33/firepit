@@ -23,6 +23,22 @@ export type DirectMessageEncryptionPayload = {
 
 type FetchedUserProfile = Partial<UserProfileData>;
 
+async function readResponseError(
+    response: Response,
+    fallback: string,
+): Promise<Error> {
+    let message = fallback;
+    try {
+        const error = (await response.json()) as { error?: string };
+        if (typeof error.error === "string" && error.error) {
+            message = error.error;
+        }
+    } catch {
+        // Keep fallback error message.
+    }
+    return new Error(message);
+}
+
 /**
  * Upload an image to Appwrite Storage
  *
@@ -41,16 +57,7 @@ export async function uploadImage(
     });
 
     if (!response.ok) {
-        let message = "Failed to upload image";
-        try {
-            const error = (await response.json()) as { error?: string };
-            if (typeof error.error === "string" && error.error) {
-                message = error.error;
-            }
-        } catch {
-            // Keep fallback error message.
-        }
-        throw new Error(message);
+        throw await readResponseError(response, "Failed to upload image");
     }
 
     const data = (await response.json()) as {
@@ -87,8 +94,7 @@ export async function deleteImage(fileId: string): Promise<void> {
     );
 
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to delete image");
+        throw await readResponseError(response, "Failed to delete image");
     }
 }
 
@@ -148,11 +154,13 @@ async function fetchUserProfilesBatchAPI(
         }
 
         const data = (await response.json()) as {
-            profiles: Record<string, UserProfileData>;
+            profiles?: Record<string, UserProfileData>;
         };
-        const profiles = data.profiles;
+        if (!data.profiles) {
+            return profileMap;
+        }
 
-        Object.entries(profiles).forEach(([userId, profile]) => {
+        for (const [userId, profile] of Object.entries(data.profiles)) {
             profileMap.set(userId, {
                 displayName: profile.displayName,
                 avatarUrl: profile.avatarUrl,
@@ -160,7 +168,7 @@ async function fetchUserProfilesBatchAPI(
                 avatarFrameUrl: profile.avatarFrameUrl,
                 status: profile.status,
             });
-        });
+        }
 
         return profileMap;
     } catch (error) {
@@ -191,8 +199,7 @@ export async function getOrCreateConversation(
     );
 
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to get conversation");
+        throw await readResponseError(response, "Failed to get conversation");
     }
 
     const data = (await response.json()) as {
@@ -240,8 +247,7 @@ export async function createGroupConversation(
     });
 
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create conversation");
+        throw await readResponseError(response, "Failed to create conversation");
     }
 
     const data = await response.json();
@@ -260,19 +266,22 @@ export async function listConversations(
     const response = await fetch("/api/direct-messages?type=conversations");
 
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to list conversations");
+        throw await readResponseError(response, "Failed to list conversations");
     }
 
-    const data = await response.json();
-    const conversations = data.conversations as Conversation[];
+    const data = (await response.json()) as { conversations?: unknown };
+    const conversations = Array.isArray(data.conversations)
+        ? (data.conversations as Conversation[])
+        : [];
 
     const otherParticipantIds = new Set<string>();
-    conversations.forEach((conv) => {
-        conv.participants
-            ?.filter((id) => id !== userId)
-            .forEach((id) => otherParticipantIds.add(id));
-    });
+    for (const conv of conversations) {
+        for (const id of conv.participants ?? []) {
+            if (id !== userId) {
+                otherParticipantIds.add(id);
+            }
+        }
+    }
 
     const profileMap = await fetchUserProfilesBatchAPI(
         Array.from(otherParticipantIds),
@@ -374,7 +383,7 @@ export async function sendDirectMessage(
             conversationId,
             senderId,
             receiverId,
-            text,
+            text: encryption ? "" : text,
             imageFileId,
             imageUrl,
             attachments:
@@ -390,8 +399,7 @@ export async function sendDirectMessage(
     });
 
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to send message");
+        throw await readResponseError(response, "Failed to send message");
     }
 
     const data = await response.json();
@@ -431,7 +439,7 @@ async function fetchUserProfilesBatch(
             }),
         );
 
-        results.forEach((result) => {
+        for (const result of results) {
             if (result.status === "fulfilled" && result.value.profile) {
                 profileMap.set(result.value.userId, {
                     displayName: result.value.profile.displayName,
@@ -441,38 +449,10 @@ async function fetchUserProfilesBatch(
                     status: result.value.profile.status,
                 });
             }
-        });
+        }
     }
 
     return profileMap;
-}
-
-/**
- * Load image URLs for messages that have imageFileId but no imageUrl yet
- * This is called separately after initial message load to avoid blocking
- *
- * @param {DirectMessage[]} messages - The messages value.
- * @returns {Promise<Map<string, string>>} The return value.
- */
-export async function loadMessageImages(
-    messages: DirectMessage[],
-): Promise<Map<string, string>> {
-    const imageMap = new Map<string, string>();
-
-    // Find messages with images that need URLs loaded
-    const messagesNeedingImages = messages.filter(
-        (msg) => msg.imageFileId && !msg.imageUrl,
-    );
-
-    if (messagesNeedingImages.length === 0) {
-        return imageMap;
-    }
-
-    // Load image URLs from the API (batch if possible in future)
-    // For now, we'll just return the map since imageUrl is already in the response
-    // This function is here for future optimization if we want to lazy-load images
-
-    return imageMap;
 }
 
 /**
@@ -511,12 +491,20 @@ export async function listDirectMessages(
     const response = await fetch(`/api/direct-messages?${params.toString()}`);
 
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to list messages");
+        throw await readResponseError(response, "Failed to list messages");
     }
 
-    const data = await response.json();
-    const items = data.items as DirectMessage[];
+    const data = (await response.json()) as {
+        items?: DirectMessage[];
+        nextCursor?: string;
+        dmEncryptionPeerEnabled?: unknown;
+        dmEncryptionPeerPublicKey?: unknown;
+        dmEncryptionSelfEnabled?: unknown;
+        readOnly?: unknown;
+        readOnlyReason?: unknown;
+        relationship?: RelationshipStatus;
+    };
+    const items = Array.isArray(data.items) ? data.items : [];
 
     // Batch fetch user profiles for all unique sender IDs
     const senderIds = [...new Set(items.map((msg) => msg.senderId))];
@@ -604,8 +592,7 @@ export async function editDirectMessage(
     );
 
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to edit message");
+        throw await readResponseError(response, "Failed to edit message");
     }
 }
 
@@ -628,7 +615,6 @@ export async function deleteDirectMessage(
     );
 
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to delete message");
+        throw await readResponseError(response, "Failed to delete message");
     }
 }

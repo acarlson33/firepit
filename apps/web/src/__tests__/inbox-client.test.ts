@@ -67,6 +67,7 @@ describe("inbox-client", () => {
             const fetchMock = vi.fn(
                 async () =>
                     ({
+                        json: async () => ({}),
                         ok: true,
                     }) as Response,
             );
@@ -101,6 +102,7 @@ describe("inbox-client", () => {
             const fetchMock = vi.fn(
                 async () =>
                     ({
+                        json: async () => ({}),
                         ok: true,
                     }) as Response,
             );
@@ -125,6 +127,7 @@ describe("inbox-client", () => {
             const fetchMock = vi.fn(
                 async () =>
                     ({
+                        json: async () => ({}),
                         ok: true,
                     }) as Response,
             );

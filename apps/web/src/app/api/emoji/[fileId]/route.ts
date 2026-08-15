@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
+import { AppwriteException } from "node-appwrite";
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { logger,
-    returnUnauthorized,
-    returnForbidden,
-} from "@/lib/newrelic-utils";
+import { logger } from "@/lib/newrelic-utils";
 
 type RouteContext = {
     params: Promise<{ fileId: string }>;
@@ -29,14 +27,25 @@ export async function GET(_request: Request, context: RouteContext) {
         const { storage } = getAdminClient();
         const env = getEnvConfig();
 
+        // Get file metadata to determine content type (and confirm existence)
+        let file;
+        try {
+            file = await storage.getFile(env.buckets.emojis, fileId);
+        } catch (error) {
+            if (error instanceof AppwriteException && error.code === 404) {
+                return NextResponse.json(
+                    { error: "Emoji not found" },
+                    { status: 404 },
+                );
+            }
+            throw error;
+        }
+
         // Get file from storage
         const fileBuffer = await storage.getFileView(
             env.buckets.emojis,
             fileId,
         );
-
-        // Get file metadata to determine content type
-        const file = await storage.getFile(env.buckets.emojis, fileId);
 
         // Return the file with appropriate headers
         return new NextResponse(fileBuffer, {

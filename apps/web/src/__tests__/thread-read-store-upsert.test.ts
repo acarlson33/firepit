@@ -42,7 +42,13 @@ vi.mock("@/lib/appwrite-core", () => ({
     },
 }));
 
-import { upsertThreadReads } from "../lib/thread-read-store";
+import { deriveThreadReadDocumentId, upsertThreadReads } from "../lib/thread-read-store";
+
+const EXPECTED_DOC_ID = deriveThreadReadDocumentId({
+    contextId: "channel-1",
+    contextType: "channel",
+    userId: "user-1",
+});
 
 describe("thread-read-store upsertThreadReads", () => {
     beforeEach(() => {
@@ -145,7 +151,7 @@ describe("thread-read-store upsertThreadReads", () => {
         expect(mockGetDocument).toHaveBeenCalledWith(
             "db",
             "threadReads",
-            "channel-1_channel_user-1",
+            EXPECTED_DOC_ID,
         );
         expect(mockUpdateDocument).toHaveBeenCalledWith(
             "db",
@@ -200,7 +206,7 @@ describe("thread-read-store upsertThreadReads", () => {
         expect(mockGetDocument).toHaveBeenCalledWith(
             "db",
             "threadReads",
-            "channel-1_channel_user-1",
+            EXPECTED_DOC_ID,
         );
         expect(mockUpdateDocument).toHaveBeenCalledWith(
             "db",

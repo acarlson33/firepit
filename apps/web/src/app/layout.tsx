@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "../index.css";
 import Providers from "@/components/providers";
 import { AppLayout } from "@/components/app-layout";
+import { OfflineBanner } from "@/components/offline-banner";
 import { ResourceHints } from "@/components/resource-hints";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
 
@@ -65,6 +66,7 @@ export default function RootLayout({
             >
                 <ResourceHints />
                 <ServiceWorkerRegistration />
+                <OfflineBanner />
                 <Providers>
                     <div className="relative min-h-screen overflow-hidden bg-background">
                         <div

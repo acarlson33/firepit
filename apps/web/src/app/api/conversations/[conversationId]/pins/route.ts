@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { Query } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { getServerSession } from "@/lib/auth-server";
-import { buildPinsResponse } from "@/lib/pin-response";
-import { returnUnauthorized, returnForbidden } from "@/lib/newrelic-utils";
-import type { DirectMessage, PinnedMessage } from "@/lib/types";
+import { buildPinsResponse, listPinnedMessages } from "@/lib/pin-response";
+import { returnForbidden, logger } from "@/lib/newrelic-utils";
 
 type RouteContext = {
     params: Promise<{
@@ -32,11 +31,26 @@ export async function GET(_request: Request, context: RouteContext) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        const conversation = await databases.getDocument(
-            env.databaseId,
-            env.collections.conversations,
-            conversationId,
-        );
+        let conversation: Record<string, unknown>;
+        try {
+            const conversationRes = await databases.getDocument(
+                env.databaseId,
+                env.collections.conversations,
+                conversationId,
+            );
+            conversation = conversationRes as unknown as Record<
+                string,
+                unknown
+            >;
+        } catch (error) {
+            if (isDocumentNotFoundError(error)) {
+                return NextResponse.json(
+                    { error: "Conversation not found" },
+                    { status: 404 },
+                );
+            }
+            throw error;
+        }
 
         const participants = Array.isArray(conversation.participants)
             ? (conversation.participants as string[])
@@ -46,21 +60,15 @@ export async function GET(_request: Request, context: RouteContext) {
             return returnForbidden();
         }
 
-        const pinDocs = await databases.listDocuments(
-            env.databaseId,
-            env.collections.pinnedMessages,
-            [
-                Query.equal("contextType", "conversation"),
-                Query.equal("contextId", conversationId),
-                Query.orderDesc("pinnedAt"),
-                Query.limit(50),
-            ],
-        );
+        const pinData = await listPinnedMessages({
+            databases,
+            env,
+            contextType: "conversation",
+            contextId: conversationId,
+            messageCollectionId: env.collections.directMessages,
+        });
 
-        const pins = pinDocs.documents as unknown as PinnedMessage[];
-        const messageIds = pins.map((pin) => pin.messageId);
-
-        if (messageIds.length === 0) {
+        if (!pinData) {
             return NextResponse.json({
                 items: [],
                 pins: [],
@@ -68,27 +76,15 @@ export async function GET(_request: Request, context: RouteContext) {
             });
         }
 
-        const messageDocs = await databases.listDocuments(
-            env.databaseId,
-            env.collections.directMessages,
-            [Query.equal("$id", messageIds), Query.limit(50)],
-        );
-
-        const messagesById = new Map<string, DirectMessage>();
-        for (const doc of messageDocs.documents) {
-            const message = doc as unknown as DirectMessage;
-            messagesById.set(String(message.$id), message);
-        }
-
-        return NextResponse.json(buildPinsResponse(pins, messagesById));
-    } catch (error) {
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to fetch pinned messages",
-            },
+            buildPinsResponse(pinData.pins, pinData.messagesById),
+        );
+    } catch (error) {
+        logger.error("Failed to fetch pinned messages", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return NextResponse.json(
+            { error: "Failed to fetch pinned messages" },
             { status: 500 },
         );
     }

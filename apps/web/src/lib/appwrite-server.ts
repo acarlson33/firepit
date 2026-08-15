@@ -1,6 +1,7 @@
 // Server-only Appwrite client (uses node-appwrite with API key support)
 // DO NOT import this in client-side code!
 
+import "server-only";
 import { Client, Databases, TablesDB, Teams, Storage } from "node-appwrite";
 import { AppwriteIntegrationError, getEnvConfig } from "./appwrite-core";
 

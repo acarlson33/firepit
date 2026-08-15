@@ -328,7 +328,9 @@ vi.mock("appwrite", () => {
             const docs = mockDocuments[params.collectionId] || [];
             const doc = docs.find((d) => d.$id === params.documentId);
             if (!doc) {
-                throw new Error("Document not found");
+                throw Object.assign(new Error("Document not found"), {
+                    type: "document_not_found",
+                });
             }
             Object.assign(doc, params.data);
             doc.$updatedAt = new Date().toISOString();
@@ -343,7 +345,9 @@ vi.mock("appwrite", () => {
             const docs = mockDocuments[params.collectionId] || [];
             const doc = docs.find((d) => d.$id === params.documentId);
             if (!doc) {
-                throw new Error("Document not found");
+                throw Object.assign(new Error("Document not found"), {
+                    type: "document_not_found",
+                });
             }
             return doc;
         }
@@ -725,7 +729,7 @@ describe("Direct Messages - Edge Cases", () => {
             "dm-after-1",
             "dm-after-2",
         ]);
-        expect(result.nextCursor).toBeUndefined();
+        expect(result.nextCursor).toBe("dm-after-2");
     });
 
     it("should normalize and migrate legacy DM reaction maps", async () => {

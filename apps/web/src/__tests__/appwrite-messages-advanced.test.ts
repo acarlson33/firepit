@@ -205,8 +205,8 @@ describe("appwrite-messages advanced flows", () => {
         });
         const { restoreMessage } = await import("../lib/appwrite-messages");
         const res = await restoreMessage("m5");
-        expect(res.removedAt).toBeNull();
-        expect(res.removedBy).toBeNull();
+        expect(res.removedAt).toBeUndefined();
+        expect(res.removedBy).toBeUndefined();
     });
 
     it("listRecentMessages returns reversed order of descending request", async () => {

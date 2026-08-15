@@ -20,7 +20,9 @@ const {
 vi.mock("node-appwrite", () => ({
     Query: {
         equal: vi.fn((field: string, value: string) => `equal(${field},${value})`),
+        orderAsc: vi.fn((field: string) => `orderAsc(${field})`),
         limit: vi.fn((value: number) => `limit(${value})`),
+        cursorAfter: vi.fn((value: string) => `cursorAfter(${value})`),
     },
 }));
 

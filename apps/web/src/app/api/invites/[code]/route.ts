@@ -7,13 +7,8 @@ import {
     getServerPreview,
 } from "@/lib/appwrite-invites";
 import { getServerClient } from "@/lib/appwrite-server";
-import { logger, recordError,
-    returnUnauthorized,
-    returnForbidden,
-} from "@/lib/newrelic-utils";
-
-const { databases } = getServerClient();
-const env = await import("@/lib/appwrite-core").then((m) => m.getEnvConfig());
+import { getEnvConfig } from "@/lib/appwrite-core";
+import { logger, recordError } from "@/lib/newrelic-utils";
 
 /**
  * GET /api/invites/[code] - Get invite preview (public endpoint)
@@ -78,12 +73,7 @@ export async function GET(
         });
 
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to get invite",
-            },
+            { error: "Failed to get invite" },
             { status: 500 },
         );
     }
@@ -110,6 +100,9 @@ export async function DELETE(
 
         const { code } = await params;
         const userId = user.$id;
+
+        const env = getEnvConfig();
+        const { databases } = getServerClient();
 
         // Get the invite
         const invite = await getInviteByCode(code);
@@ -138,8 +131,12 @@ export async function DELETE(
         // Check permissions: owner, creator, or global admin
         const isOwner = server.ownerId === userId;
         const isCreator = invite.creatorId === userId;
-        const globalRoles = await getUserRoles(userId);
-        const isAdmin = globalRoles.isAdmin;
+
+        let isAdmin = false;
+        if (!isOwner && !isCreator) {
+            const globalRoles = await getUserRoles(userId);
+            isAdmin = globalRoles.isAdmin;
+        }
 
         if (!isOwner && !isCreator && !isAdmin) {
             return NextResponse.json(
@@ -180,12 +177,7 @@ export async function DELETE(
         });
 
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to revoke invite",
-            },
+            { error: "Failed to revoke invite" },
             { status: 500 },
         );
     }

@@ -43,6 +43,7 @@ vi.mock("node-appwrite", () => ({
         limit: (n: number) => `limit(${n})`,
         orderDesc: (field: string) => `orderDesc(${field})`,
         cursorAfter: (value: string) => `cursorAfter(${value})`,
+        search: (field: string, value: string) => `search(${field},${value})`,
     },
 }));
 
@@ -53,7 +54,11 @@ function createRequest(url: string = "http://localhost/api/servers/public") {
 describe("GET /api/servers/public", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mockGetActualMemberCounts.mockResolvedValue(new Map());
+        mockGetActualMemberCounts.mockResolvedValue({
+            counts: new Map(),
+            truncated: false,
+            success: true,
+        });
     });
 
     it("should fetch public servers successfully", async () => {
@@ -83,7 +88,11 @@ describe("GET /api/servers/public", () => {
         });
 
         // Mock batched member counts
-        mockGetActualMemberCounts.mockResolvedValue(new Map([["server1", 50]]));
+        mockGetActualMemberCounts.mockResolvedValue({
+            counts: new Map([["server1", 50]]),
+            truncated: false,
+            success: true,
+        });
 
         const response = await GET(createRequest());
         const data = await response.json();
@@ -149,13 +158,19 @@ describe("GET /api/servers/public", () => {
             });
 
         mockGetActualMemberCounts
-            .mockResolvedValueOnce(
-                new Map([
+            .mockResolvedValueOnce({
+                counts: new Map([
                     ["server3", 30],
                     ["server2", 20],
                 ]),
-            )
-            .mockResolvedValueOnce(new Map([["server1", 10]]));
+                truncated: false,
+                success: true,
+            })
+            .mockResolvedValueOnce({
+                counts: new Map([["server1", 10]]),
+                truncated: false,
+                success: true,
+            });
 
         const firstResponse = await GET(
             createRequest("http://localhost/api/servers/public?limit=2"),
@@ -232,16 +247,21 @@ describe("GET /api/servers/public", () => {
             },
         ];
 
+        // Search is applied server-side, so the mock returns only matching docs
         mockDatabases.listDocuments.mockResolvedValueOnce({
-            documents: searchServers,
-            total: 4,
+            documents: searchServers.filter((server) =>
+                server.name.toLowerCase().includes("beta"),
+            ),
+            total: 3,
         });
-        mockGetActualMemberCounts.mockResolvedValueOnce(
-            new Map([
+        mockGetActualMemberCounts.mockResolvedValueOnce({
+            counts: new Map([
                 ["server3", 30],
                 ["server2", 20],
             ]),
-        );
+            truncated: false,
+            success: true,
+        });
 
         const response = await GET(
             createRequest(
@@ -263,6 +283,7 @@ describe("GET /api/servers/public", () => {
             "servers-collection",
             expect.arrayContaining([
                 expect.stringContaining("cursorAfter(server4)"),
+                expect.stringContaining("search(name,beta)"),
             ]),
         );
     });
@@ -281,7 +302,11 @@ describe("GET /api/servers/public", () => {
             documents: mockServers,
             total: 1,
         });
-        mockGetActualMemberCounts.mockResolvedValue(new Map([["server1", 0]]));
+        mockGetActualMemberCounts.mockResolvedValue({
+            counts: new Map([["server1", 0]]),
+            truncated: false,
+            success: true,
+        });
 
         const response = await GET(createRequest());
         const data = await response.json();

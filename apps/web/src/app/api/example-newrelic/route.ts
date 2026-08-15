@@ -7,11 +7,9 @@ import {
     recordError,
     setTransactionName,
     trackApiCall,
-    returnUnauthorized,
-    returnForbidden,
 } from "@/lib/newrelic-utils";
 
-const ENDPOINT = "/api/example";
+const ENDPOINT = "/api/example-newrelic";
 
 export async function GET(request: NextRequest) {
     const startTime = Date.now();
@@ -22,7 +20,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    setTransactionName("GET /api/example");
+    setTransactionName("GET /api/example-newrelic");
 
     try {
         addTransactionAttributes({

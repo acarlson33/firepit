@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -146,6 +147,8 @@ export default function AdminTabScreen() {
     useEffect(() => {
         void loadServers();
     }, [loadServers]);
+
+    useRetryOnReconnect(loadState === "error", loadServers);
 
     return (
         <View style={[styles.root, { backgroundColor: theme.background }]}>

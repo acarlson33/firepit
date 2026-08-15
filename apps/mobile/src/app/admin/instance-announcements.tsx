@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
     ActivityIndicator,
     FlatList,
@@ -196,6 +197,8 @@ export default function InstanceAnnouncementsScreen() {
     useEffect(() => {
         void loadAnnouncements();
     }, [loadAnnouncements]);
+
+    useRetryOnReconnect(loadState === "error", loadAnnouncements);
 
     const handleSubmit = useCallback(async () => {
         if (!instanceUrl || !accessToken) return;

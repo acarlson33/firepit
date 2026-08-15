@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
   ActivityIndicator,
   Pressable,
@@ -153,9 +154,13 @@ export default function ChatTabScreen() {
     if (canLoad) void loadServers();
   }, [canLoad, loadServers]);
 
+  useRetryOnReconnect(serverLoadState === "error", loadServers);
+
   useEffect(() => {
     if (canLoad) void loadDMs();
   }, [canLoad, loadDMs]);
+
+  useRetryOnReconnect(dmLoadState === "error", loadDMs);
 
   // Load channels when a server is expanded
   const expandServer = useCallback(async (serverId: string) => {

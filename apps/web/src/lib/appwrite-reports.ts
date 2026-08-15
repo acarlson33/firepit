@@ -1,4 +1,4 @@
-import { ID, Query } from "node-appwrite";
+import { ID, Permission, Query, Role } from "node-appwrite";
 
 import { logger } from "@/lib/newrelic-utils";
 import { getEnvConfig } from "./appwrite-core";
@@ -139,7 +139,7 @@ export async function createReport(input: CreateReportInput): Promise<Report> {
             justification: input.justification,
             status: "pending",
         },
-        [`read("user:${input.reporterId}")`],
+        [Permission.read(Role.user(input.reporterId))],
     );
 
     return parseReport(doc);
@@ -193,11 +193,13 @@ export async function listReports(
             // Skip malformed rows so one bad document does not break listing.
         }
     }
-    const last = items.at(-1);
+    const lastRaw = toRecord(rawDocuments.at(-1));
+    const lastRawId = typeof lastRaw.$id === "string" ? lastRaw.$id : null;
 
     return {
         items,
-        nextCursor: items.length === limit && last ? last.$id : null,
+        nextCursor:
+            rawDocuments.length === limit && lastRawId ? lastRawId : null,
     };
 }
 

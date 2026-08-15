@@ -4,13 +4,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { STATUS_STALE_THRESHOLD_MS } from "@/lib/status-normalization";
+import { apiCache } from "@/lib/cache-utils";
 
 // Create persistent mocks
-const { mockListDocuments } = vi.hoisted(() => ({
+const { mockListDocuments, mockSession } = vi.hoisted(() => ({
     mockListDocuments: vi.fn(),
+    mockSession: vi.fn(),
 }));
 
 // Mock dependencies
+vi.mock("@/lib/auth-server", () => ({
+    getServerSession: mockSession,
+}));
 vi.mock("@/lib/appwrite-server", () => ({
     getServerClient: vi.fn(() => ({
         databases: {
@@ -29,6 +34,8 @@ vi.mock("@/lib/appwrite-core", () => ({
 }));
 
 vi.mock("@/lib/newrelic-utils", () => ({
+    returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+    returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
     logger: {
         info: vi.fn(),
         warn: vi.fn(),
@@ -43,6 +50,7 @@ vi.mock("node-appwrite", () => ({
     Query: {
         equal: (field: string, value: string[]) =>
             `equal(${field},${JSON.stringify(value)})`,
+        limit: (n: number) => `limit(${n})`,
     },
 }));
 
@@ -51,6 +59,8 @@ describe("POST /api/status/batch", () => {
 
     beforeEach(async () => {
         vi.clearAllMocks();
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        apiCache.clear();
 
         // Dynamically import the route handler
         const module = await import("../../app/api/status/batch/route");

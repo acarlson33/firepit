@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
     ActivityIndicator,
     FlatList,
@@ -131,6 +132,8 @@ export default function InstanceReportsScreen() {
     useEffect(() => {
         void loadReports();
     }, [loadReports]);
+
+    useRetryOnReconnect(loadState === "error", loadReports);
 
     return (
         <AuthRouteGuard>

@@ -56,9 +56,8 @@ export async function GET() {
         expectedCookieName,
         sessionCookieExists: Boolean(sessionCookie),
         sessionCookieValue: sessionCookie?.value
-            ? `${sessionCookie.value.substring(0, 20)}...`
+            ? `${sessionCookie.value.slice(0, 20)}...`
             : null,
-        sessionCookieValueFull: sessionCookie?.value || null,
         allCookieNames: allCookies.map((c) => c.name),
         totalCookies: allCookies.length,
         validation: validationResult,

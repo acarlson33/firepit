@@ -11,6 +11,7 @@ const {
     mockGetDocument,
     mockListDocuments,
     mockCreateDocument,
+    mockUpdateDocument,
     mockDeleteDocument,
     mockSession,
     mockGetUserRoles,
@@ -20,6 +21,7 @@ const {
     mockGetDocument: vi.fn(),
     mockListDocuments: vi.fn(),
     mockCreateDocument: vi.fn(),
+    mockUpdateDocument: vi.fn(),
     mockDeleteDocument: vi.fn(),
     mockSession: vi.fn(),
     mockGetUserRoles: vi.fn(),
@@ -37,6 +39,17 @@ vi.mock("node-appwrite", () => ({
     ID: {
         unique: vi.fn(() => "doc-1"),
     },
+    AppwriteException: class AppwriteException extends Error {
+        code: number;
+        type: string;
+        constructor(message: string, code = 500, type = "unknown") {
+            super(message);
+            this.name = "AppwriteException";
+            this.code = code;
+            this.type = type;
+            Object.setPrototypeOf(this, new.target.prototype);
+        }
+    },
 }));
 
 vi.mock("@/lib/appwrite-server", () => ({
@@ -45,6 +58,7 @@ vi.mock("@/lib/appwrite-server", () => ({
             getDocument: mockGetDocument,
             listDocuments: mockListDocuments,
             createDocument: mockCreateDocument,
+            updateDocument: mockUpdateDocument,
             deleteDocument: mockDeleteDocument,
         },
     })),
@@ -88,6 +102,7 @@ describe("server moderation route", () => {
         mockGetDocument.mockReset();
         mockListDocuments.mockReset();
         mockCreateDocument.mockReset();
+        mockUpdateDocument.mockReset();
         mockDeleteDocument.mockReset();
         mockSession.mockReset();
         mockGetUserRoles.mockReset();
@@ -243,5 +258,94 @@ describe("server moderation route", () => {
                 details: "User kicked from server",
             }),
         );
+    });
+
+    it("returns 404 when the server does not exist", async () => {
+        mockGetDocument.mockRejectedValue({ type: "document_not_found" });
+
+        const request = new NextRequest(
+            "http://localhost/api/servers/missing/moderation",
+            {
+                method: "POST",
+                body: JSON.stringify({ action: "ban", userId: "user-1" }),
+            },
+        );
+
+        const response = await POST(request, {
+            params: Promise.resolve({ serverId: "missing" }),
+        });
+        const data = await response.json();
+
+        expect(response.status).toBe(404);
+        expect(data.error).toBe("Server not found");
+    });
+
+    it("updates an existing ban instead of creating a duplicate", async () => {
+        mockListDocuments
+            .mockResolvedValueOnce({ documents: [{ $id: "ban-1" }] })
+            .mockResolvedValueOnce({ documents: [] });
+        mockUpdateDocument.mockResolvedValue({ $id: "ban-1" });
+
+        const request = new NextRequest(
+            "http://localhost/api/servers/server-1/moderation",
+            {
+                method: "POST",
+                body: JSON.stringify({ action: "ban", userId: "user-1" }),
+            },
+        );
+
+        const response = await POST(request, {
+            params: Promise.resolve({ serverId: "server-1" }),
+        });
+        const data = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(mockUpdateDocument).toHaveBeenCalled();
+        expect(mockCreateDocument).not.toHaveBeenCalled();
+        expect(data.success).toBe(true);
+    });
+
+    it("unbans by removing all matching ban documents", async () => {
+        mockListDocuments.mockResolvedValue({
+            documents: [{ $id: "ban-1" }, { $id: "ban-2" }],
+        });
+        mockDeleteDocument.mockResolvedValue({});
+
+        const request = new NextRequest(
+            "http://localhost/api/servers/server-1/moderation",
+            {
+                method: "POST",
+                body: JSON.stringify({ action: "unban", userId: "user-1" }),
+            },
+        );
+
+        const response = await POST(request, {
+            params: Promise.resolve({ serverId: "server-1" }),
+        });
+        const data = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(mockDeleteDocument).toHaveBeenCalledTimes(2);
+        expect(data.result).toEqual({ removed: 2 });
+    });
+
+    it("returns 404 when unbanning a user who is not banned", async () => {
+        mockListDocuments.mockResolvedValue({ documents: [] });
+
+        const request = new NextRequest(
+            "http://localhost/api/servers/server-1/moderation",
+            {
+                method: "POST",
+                body: JSON.stringify({ action: "unban", userId: "user-1" }),
+            },
+        );
+
+        const response = await POST(request, {
+            params: Promise.resolve({ serverId: "server-1" }),
+        });
+        const data = await response.json();
+
+        expect(response.status).toBe(404);
+        expect(data.error).toBe("User is not banned");
     });
 });

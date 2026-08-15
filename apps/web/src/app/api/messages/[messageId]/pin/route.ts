@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { Query, Databases, Client, ID } from "node-appwrite";
+import { Query, ID } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
@@ -18,8 +18,6 @@ import {
     setTransactionName,
     trackApiCall,
     addTransactionAttributes,
-    returnUnauthorized,
-    returnForbidden,
 } from "@/lib/newrelic-utils";
 
 type RouteContext = {
@@ -29,34 +27,6 @@ type RouteContext = {
 };
 
 const MAX_PINS_PER_CHANNEL = 50;
-
-// Collection IDs for roles system (not in main config)
-const ROLES_COLLECTION_ID = "roles";
-const ROLE_ASSIGNMENTS_COLLECTION_ID = "role_assignments";
-const CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID =
-    "channel_permission_overrides";
-
-/**
- * Get a direct database client for roles queries
- */
-function getRolesDatabase(): Databases {
-    const endpoint = process.env.APPWRITE_ENDPOINT;
-    const project = process.env.APPWRITE_PROJECT_ID;
-    const apiKey = process.env.APPWRITE_API_KEY;
-
-    if (!endpoint || !project || !apiKey) {
-        throw new Error("Missing Appwrite configuration");
-    }
-
-    const client = new Client().setEndpoint(endpoint).setProject(project);
-    if (
-        typeof (client as unknown as { setKey?: (k: string) => void })
-            .setKey === "function"
-    ) {
-        (client as unknown as { setKey: (k: string) => void }).setKey(apiKey);
-    }
-    return new Databases(client);
-}
 
 /**
  * Helper to check if user has manageMessages permission for a channel
@@ -68,7 +38,7 @@ async function canManageMessages(
     ownerId: string,
 ): Promise<boolean> {
     const env = getEnvConfig();
-    const rolesDb = getRolesDatabase();
+    const { databases } = getServerClient();
 
     // Server owner can always manage messages
     if (userId === ownerId) {
@@ -77,9 +47,9 @@ async function canManageMessages(
 
     try {
         // Get user's role assignments
-        const roleAssignments = await rolesDb.listDocuments(
+        const roleAssignments = await databases.listDocuments(
             env.databaseId,
-            ROLE_ASSIGNMENTS_COLLECTION_ID,
+            env.collections.roleAssignments,
             [Query.equal("userId", userId), Query.equal("serverId", serverId)],
         );
 
@@ -99,9 +69,9 @@ async function canManageMessages(
         const roles: Role[] = [];
         for (const roleId of roleIds) {
             try {
-                const role = await rolesDb.getDocument(
+                const role = await databases.getDocument(
                     env.databaseId,
-                    ROLES_COLLECTION_ID,
+                    env.collections.roles,
                     roleId,
                 );
                 roles.push(role as unknown as Role);
@@ -111,9 +81,9 @@ async function canManageMessages(
         }
 
         // Get channel-specific overrides
-        const overrides = await rolesDb.listDocuments(
+        const overrides = await databases.listDocuments(
             env.databaseId,
-            CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID,
+            env.collections.channelPermissionOverrides,
             [Query.equal("channelId", channelId)],
         );
 
@@ -189,21 +159,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
             );
         }
 
-        if (!message.channelId) {
-            return NextResponse.json(
-                { error: "Message is not in a channel" },
-                { status: 400 },
-            );
-        }
-
-        // Message must have a channelId
-        if (!message.channelId) {
-            return NextResponse.json(
-                { error: "Message is not in a channel" },
-                { status: 400 },
-            );
-        }
-
         // Get the server to check ownership
         const serverId = message.serverId;
         let ownerId: string | undefined;
@@ -225,7 +180,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const canPin = await canManageMessages(
             user.$id,
             serverId ?? "",
-            message.channelId,
+            channelId,
             ownerId ?? "",
         );
 
@@ -243,7 +198,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             env.collections.pinnedMessages,
             [
                 Query.equal("contextType", "channel"),
-                Query.equal("contextId", message.channelId),
+                Query.equal("contextId", channelId),
                 Query.equal("messageId", messageId),
                 Query.limit(1),
             ],
@@ -269,7 +224,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             env.collections.pinnedMessages,
             [
                 Query.equal("contextType", "channel"),
-                Query.equal("contextId", message.channelId),
+                Query.equal("contextId", channelId),
                 Query.limit(MAX_PINS_PER_CHANNEL + 1),
             ],
         );
@@ -290,7 +245,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             {
                 messageId,
                 contextType: "channel",
-                contextId: message.channelId,
+                contextId: channelId,
                 pinnedBy: user.$id,
                 pinnedAt: now,
             },
@@ -301,7 +256,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         logger.info("Message pinned successfully", {
             messageId,
-            channelId: message.channelId,
+            channelId: channelId,
             userId: user.$id,
         });
 
@@ -435,7 +390,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
         logger.info("Message unpinned successfully", {
             messageId,
-            channelId: message.channelId,
+            channelId: channelId,
             userId: user.$id,
         });
 

@@ -112,26 +112,26 @@ async function fetchFeatureFlagFromDb(
 }
 
 const getCachedFeatureFlag = unstable_cache(
-    async (key: FeatureFlagKey): Promise<boolean> => {
-        try {
-            const value = await fetchFeatureFlagFromDb(key);
-            if (value !== null) {
-                return value;
-            }
-        } catch (error) {
-            logger.error(`Failed to get feature flag ${key}:`, {
-                error,
-            });
-        }
-
-        return DEFAULT_FLAGS[key] ?? false;
+    async (key: FeatureFlagKey): Promise<boolean | null> => {
+        return fetchFeatureFlagFromDb(key);
     },
     ["feature-flags"],
     { revalidate: CACHE_TTL, tags: ["feature-flags"] },
 );
 
 export async function getFeatureFlag(key: FeatureFlagKey): Promise<boolean> {
-    return getCachedFeatureFlag(key);
+    try {
+        const value = await getCachedFeatureFlag(key);
+        if (value !== null) {
+            return value;
+        }
+    } catch (error) {
+        logger.error(`Failed to get feature flag ${key}:`, {
+            error,
+        });
+    }
+
+    return DEFAULT_FLAGS[key] ?? false;
 }
 
 /**
@@ -219,6 +219,7 @@ export async function setFeatureFlag(
             },
         );
 
+        clearFeatureFlagsCache();
         return true;
     } catch (error) {
         logger.error("Failed to update feature flag", {

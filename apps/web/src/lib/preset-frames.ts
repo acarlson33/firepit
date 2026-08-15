@@ -196,9 +196,15 @@ function getPresetFrameBucketUrl(fileId: string): string {
 
 function hydrateFrameWithImageUrl(frame: PresetFrame): PresetFrame {
     const storageFileId = frame.storageFileId ?? frame.id;
+    let imageUrl: string | undefined;
+    try {
+        imageUrl = getPresetFrameBucketUrl(storageFileId);
+    } catch {
+        imageUrl = undefined;
+    }
     return {
         ...frame,
-        imageUrl: getPresetFrameBucketUrl(storageFileId),
+        imageUrl,
         storageFileId,
     };
 }
@@ -217,16 +223,12 @@ function getPresetFrameMetaById(id: string): PresetFrame | undefined {
 }
 
 export function getPresetFrameImageUrl(id: string): string | undefined {
-    const storageFileId = getPresetFrameStorageFileId(id);
-    if (!storageFileId) {
+    const frame = getPresetFrameMetaById(id);
+    if (!frame) {
         return undefined;
     }
 
-    try {
-        return getPresetFrameBucketUrl(storageFileId);
-    } catch {
-        return undefined;
-    }
+    return hydrateFrameWithImageUrl(frame).imageUrl;
 }
 
 export function getAllPresetFrames(): PresetFrame[] {

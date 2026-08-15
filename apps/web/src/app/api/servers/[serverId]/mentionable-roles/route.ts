@@ -6,10 +6,8 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
-import { logger,
-    returnUnauthorized,
-    returnForbidden,
-} from "@/lib/newrelic-utils";
+import { listPages } from "@/lib/appwrite-pagination";
+import { logger } from "@/lib/newrelic-utils";
 
 // Define explicit interfaces for Appwrite documents used in this route
 interface RoleDocument {
@@ -19,68 +17,6 @@ interface RoleDocument {
     color?: string | null;
     mentionable?: boolean;
     memberCount?: number;
-}
-
-// Minimal shape for the Appwrite databases client methods used here.
-interface DatabasesType {
-    listDocuments(
-        databaseId: string,
-        collectionId: string,
-        queries?: string[],
-    ): Promise<{ documents: Array<unknown> }>;
-    listDocuments(params: {
-        databaseId: string;
-        collectionId: string;
-        queries?: string[];
-        transactionId?: string;
-        total?: boolean;
-        ttl?: number;
-    }): Promise<{ documents: Array<unknown> }>;
-}
-
-// Minimal shape for the environment config used by this module.
-interface EnvType {
-    databaseId: string;
-    collections: {
-        roles: string;
-        roleAssignments: string;
-        [key: string]: string;
-    };
-}
-
-async function getAllDocumentsPaginated<T>(
-    databases: DatabasesType,
-    env: EnvType,
-    collectionId: string,
-    serverId: string,
-    queries: string[] = [],
-    limit = 100,
-): Promise<Array<T>> {
-    const results: Array<T> = [];
-    let offset = 0;
-    let hasMore = true;
-
-    // This loop intentionally awaits each page sequentially to avoid
-    // overwhelming the Appwrite server with parallel requests and to
-    // respect the service's pagination model.
-    while (hasMore) {
-        const resp = await databases.listDocuments(
-            env.databaseId,
-            collectionId,
-            [
-                Query.equal("serverId", serverId),
-                ...queries,
-                Query.limit(limit),
-                Query.offset(offset),
-            ],
-        );
-
-        results.push(...(resp.documents as Array<T>));
-        hasMore = resp.documents.length === limit;
-        offset += limit;
-    }
-
-    return results;
 }
 
 /**
@@ -131,13 +67,15 @@ export async function GET(
 
         // Fetch roles for the server, then filter in-memory so we do not
         // depend on unsupported Appwrite filters or missing indexes.
-        const mentionableRoleDocs =
-            await getAllDocumentsPaginated<RoleDocument>(
-                databases,
-                env,
-                env.collections.roles,
-                serverId,
-            );
+        const { documents: roleDocs } = await listPages({
+            databases,
+            databaseId: env.databaseId,
+            collectionId: env.collections.roles,
+            baseQueries: [Query.equal("serverId", serverId)],
+            pageSize: 100,
+            warningContext: `mentionable-roles:${serverId}`,
+        });
+        const mentionableRoleDocs = roleDocs as unknown as RoleDocument[];
 
         const mentionableRoles = mentionableRoleDocs.filter((doc) =>
             Boolean(doc.mentionable),
@@ -154,7 +92,10 @@ export async function GET(
 
         return NextResponse.json({ roles: responseRoles });
     } catch (error) {
-        logger.error("Failed to fetch mentionable roles", { error, serverId });
+        logger.error("Failed to fetch mentionable roles", {
+            error: error instanceof Error ? error.message : String(error),
+            serverId,
+        });
         return NextResponse.json(
             { error: "Failed to fetch roles" },
             { status: 500 },

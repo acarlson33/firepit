@@ -47,6 +47,9 @@ vi.mock("@/lib/auth-server", () => ({
 
 vi.mock("@/lib/server-channel-access", () => ({
     getServerPermissionsForUser: mockGetServerPermissionsForUser,
+    invalidateServerAccessCacheForUser: vi.fn(),
+    invalidateServerAccessCacheForServer: vi.fn(),
+    invalidateChannelAccessCache: vi.fn(),
 }));
 
 describe("GET /api/channels", () => {
@@ -343,7 +346,7 @@ describe("GET /api/channels", () => {
         const data = await response.json();
 
         expect(response.status).toBe(500);
-        expect(data.error).toBe("Database connection failed");
+        expect(data.error).toBe("Failed to fetch channels");
     });
 
     it("should handle non-Error exceptions", async () => {
@@ -463,7 +466,6 @@ describe("GET /api/channels", () => {
                 serverId: "server1",
                 type: "announcement",
             }),
-            ['read("any")'],
         );
     });
 

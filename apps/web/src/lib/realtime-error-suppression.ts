@@ -8,7 +8,17 @@ export type RealtimeSubscription =
     | (() => void);
 
 function isExpectedTeardownError(error: unknown): boolean {
-    if (typeof DOMException !== "undefined" && error instanceof DOMException) {
+    const expectedDomExceptionNames = new Set([
+        "AbortError",
+        "InvalidStateError",
+        "NetworkError",
+    ]);
+
+    if (
+        typeof DOMException !== "undefined" &&
+        error instanceof DOMException &&
+        expectedDomExceptionNames.has(error.name)
+    ) {
         return true;
     }
 
@@ -33,7 +43,6 @@ function isExpectedTeardownError(error: unknown): boolean {
         msg.includes("already in closing") ||
         msg.includes("closed before") ||
         msg.includes("aborterror") ||
-        msg.includes("domexception") ||
         (msg.includes("was interrupted while the page was loading") &&
             msg.includes("/v1/realtime")) ||
         (msg.includes("can't establish a connection") &&
@@ -51,12 +60,14 @@ export async function closeSubscriptionSafely(
         return;
     }
 
-    const teardown =
-        typeof subscription === "function"
-            ? subscription
-            : typeof subscription.unsubscribe === "function"
-              ? subscription.unsubscribe.bind(subscription)
-              : subscription.close.bind(subscription);
+    let teardown: () => Promise<void> | void;
+    if (typeof subscription === "function") {
+        teardown = subscription;
+    } else if (typeof subscription.unsubscribe === "function") {
+        teardown = subscription.unsubscribe.bind(subscription);
+    } else {
+        teardown = subscription.close.bind(subscription);
+    }
 
     try {
         await Promise.resolve(teardown());

@@ -16,15 +16,19 @@ const {
     mockSetProject: vi.fn().mockReturnThis(),
 }));
 
-vi.mock("node-appwrite", () => ({
-    Account: vi.fn(() => ({
-        updateVerification: mockUpdateVerification,
-    })),
-    Client: vi.fn(() => ({
-        setEndpoint: mockSetEndpoint,
-        setProject: mockSetProject,
-    })),
-}));
+ vi.mock("node-appwrite", () => ({
+     Account: vi.fn(function () {
+         return {
+             updateVerification: mockUpdateVerification,
+         };
+     }),
+     Client: vi.fn(function () {
+         return {
+             setEndpoint: mockSetEndpoint,
+             setProject: mockSetProject,
+         };
+     }),
+ }));
 
 vi.mock("@/lib/appwrite-core", () => ({
     getEnvConfig: mockGetEnvConfig,
@@ -38,6 +42,8 @@ vi.mock("@/lib/feature-flags", () => ({
 }));
 
 vi.mock("@/lib/newrelic-utils", () => ({
+    returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+    returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
     logger: {
         error: mockLoggerError,
     },
@@ -68,6 +74,26 @@ describe("verify-email API route", () => {
 
         expect(response.status).toBe(307);
         expect(response.headers.get("location")).toBe("http://localhost/login");
+        expect(mockUpdateVerification).not.toHaveBeenCalled();
+    });
+
+    it("logs and redirects with verified=0 when the feature flag lookup fails", async () => {
+        mockGetFeatureFlag.mockRejectedValue(new Error("db down"));
+
+        const response = await GET(
+            new Request(
+                "http://localhost/api/auth/verify-email?userId=user-1&secret=secret-1",
+            ),
+        );
+
+        expect(response.status).toBe(307);
+        expect(response.headers.get("location")).toBe(
+            "http://localhost/login?verified=0",
+        );
+        expect(mockLoggerError).toHaveBeenCalledWith(
+            "Failed to check email verification feature flag",
+            expect.objectContaining({ error: "db down" }),
+        );
         expect(mockUpdateVerification).not.toHaveBeenCalled();
     });
 

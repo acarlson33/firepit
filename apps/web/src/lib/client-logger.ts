@@ -101,15 +101,14 @@ export function recordClientError(
     if (shouldSendToPostHog() && posthog) {
         if (posthog.captureException) {
             posthog.captureException(error, attributes);
-            return;
+        } else {
+            posthog.capture("client_error", {
+                errorMessage: error.message,
+                errorName: error.name,
+                errorStack: error.stack,
+                ...attributes,
+            });
         }
-
-        posthog.capture("client_error", {
-            errorMessage: error.message,
-            errorName: error.name,
-            errorStack: error.stack,
-            ...attributes,
-        });
     }
 }
 

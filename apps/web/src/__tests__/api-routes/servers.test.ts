@@ -17,6 +17,7 @@ vi.mock("node-appwrite", () => ({
         limit: (limit: number) => `limit(${String(limit)})`,
         orderAsc: (field: string) => `orderAsc(${field})`,
         cursorAfter: (cursor: string) => `cursorAfter(${cursor})`,
+        select: (attributes: string[]) => `select(${attributes.join(",")})`,
     },
 }));
 
@@ -98,12 +99,14 @@ describe("GET /api/servers", () => {
                 ],
             });
 
-        mockGetActualMemberCounts.mockResolvedValue(
-            new Map<string, number>([
+        mockGetActualMemberCounts.mockResolvedValue({
+            counts: new Map<string, number>([
                 ["server-1", 4],
                 ["server-2", 9],
             ]),
-        );
+            truncated: false,
+            success: true,
+        });
 
         const request = new NextRequest("http://localhost/api/servers?limit=25");
         const response = await GET(request);
@@ -139,7 +142,6 @@ describe("GET /api/servers", () => {
             "servers-collection",
             expect.arrayContaining([
                 expect.stringContaining("equal($id,server-1,server-2)"),
-                expect.stringContaining("limit(25)"),
                 expect.stringContaining("orderAsc($createdAt)"),
             ]),
         );
@@ -178,9 +180,11 @@ describe("GET /api/servers", () => {
                 ],
             });
 
-        mockGetActualMemberCounts.mockResolvedValue(
-            new Map<string, number>([["server-3", 3]]),
-        );
+        mockGetActualMemberCounts.mockResolvedValue({
+            counts: new Map<string, number>([["server-3", 3]]),
+            truncated: false,
+            success: true,
+        });
 
         const request = new NextRequest(
             "http://localhost/api/servers?limit=1&cursor=server-2",
@@ -190,13 +194,16 @@ describe("GET /api/servers", () => {
 
         expect(response.status).toBe(200);
         expect(body.servers).toHaveLength(1);
-        expect(body.nextCursor).toBe("server-3");
+        // Pagination is computed in memory over the batched result set, so no
+        // more pages exist when the remaining set is fully consumed.
+        expect(body.nextCursor).toBeNull();
         expect(mockDatabases.listDocuments).toHaveBeenNthCalledWith(
             2,
             "test-db",
             "servers-collection",
             expect.arrayContaining([
-                expect.stringContaining("cursorAfter(server-2)"),
+                expect.stringContaining("equal($id,server-3)"),
+                expect.stringContaining("orderAsc($createdAt)"),
             ]),
         );
     });
@@ -238,9 +245,11 @@ describe("GET /api/servers", () => {
                 ],
             });
 
-        mockGetActualMemberCounts.mockResolvedValue(
-            new Map<string, number>([["server-1", 140]]),
-        );
+        mockGetActualMemberCounts.mockResolvedValue({
+            counts: new Map<string, number>([["server-1", 140]]),
+            truncated: false,
+            success: true,
+        });
 
         const request = new NextRequest("http://localhost/api/servers?limit=25");
         const response = await GET(request);
@@ -275,6 +284,6 @@ describe("GET /api/servers", () => {
         const body = await response.json();
 
         expect(response.status).toBe(500);
-        expect(body.error).toBe("Database down");
+        expect(body.error).toBe("Failed to fetch servers");
     });
 });

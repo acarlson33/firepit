@@ -48,6 +48,92 @@ interface NotificationOptions {
     conversationId?: string | null;
 }
 
+type RealtimeUpdateQuery = {
+    queries: ReturnType<typeof Query.equal>[];
+};
+
+type RealtimeEvent = {
+    events: string[];
+    payload: Record<string, unknown>;
+};
+
+/**
+ * Shared realtime subscription lifecycle for notification sources. Creates the
+ * channel, reuses an existing subscription via update when possible, tracks the
+ * subscription, and returns a cleanup that untracks and closes it. When the
+ * consumer has been cancelled mid-setup, nothing is tracked or retained.
+ */
+async function setupRealtimeSubscription(params: {
+    collectionId: string;
+    queryField: string;
+    queryValue: string;
+    contextLabel: string;
+    subscriptionRef: { current: RealtimeSubscription | null };
+    isCancelled: () => boolean;
+    onEvent: (event: RealtimeEvent) => void;
+}): Promise<() => void> {
+    const { getSharedRealtime, trackSubscription } = await import(
+        "@/lib/realtime-pool"
+    );
+    const realtime = getSharedRealtime();
+    const messageChannel = Channel.database(env.databaseId)
+        .collection(params.collectionId)
+        .document();
+    const messageChannelKey = messageChannel.toString();
+    const filterQueries = [Query.equal(params.queryField, params.queryValue)];
+
+    const existing = params.subscriptionRef.current;
+    if (
+        existing &&
+        typeof (existing as { update?: unknown }).update === "function"
+    ) {
+        try {
+            const updatable = existing as unknown as {
+                update: (args: RealtimeUpdateQuery) => Promise<void>;
+            };
+            await updatable.update({ queries: filterQueries });
+            if (params.isCancelled()) {
+                // Consumer is gone; don't retain or track the updated subscription.
+                return () => {};
+            }
+            const untrack = trackSubscription(messageChannelKey);
+            return createRealtimeCleanup({
+                contextId: params.queryValue,
+                contextLabel: params.contextLabel,
+                subscription: existing,
+                untrack,
+            });
+        } catch {
+            // fallthrough to recreate
+        }
+    }
+
+    const subscription = await realtime.subscribe(
+        messageChannel,
+        params.onEvent,
+        filterQueries,
+    );
+    params.subscriptionRef.current = subscription;
+
+    if (params.isCancelled()) {
+        createRealtimeCleanup({
+            contextId: params.queryValue,
+            contextLabel: params.contextLabel,
+            subscription,
+        })();
+        params.subscriptionRef.current = null;
+        return () => {};
+    }
+
+    const untrack = trackSubscription(messageChannelKey);
+    return createRealtimeCleanup({
+        contextId: params.queryValue,
+        contextLabel: params.contextLabel,
+        subscription,
+        untrack,
+    });
+}
+
 /**
  * Hook to handle notification triggers for incoming messages.
  * Subscribes to message events and triggers notifications based on user preferences.
@@ -62,6 +148,8 @@ export function useNotifications({
     const channelSubscriptionRef = useRef<RealtimeSubscription | null>(null);
     const dmSubscriptionRef = useRef<RealtimeSubscription | null>(null);
     const notificationPermissionRef = useRef<NotificationPermission>("default");
+    const [notificationPermission, setNotificationPermission] =
+        useState<NotificationPermission>("default");
     const [isPageVisible, setIsPageVisible] = useState(() => {
         if (typeof document === "undefined") {
             return true;
@@ -74,6 +162,7 @@ export function useNotifications({
     useEffect(() => {
         if (typeof window !== "undefined" && "Notification" in window) {
             notificationPermissionRef.current = Notification.permission;
+            setNotificationPermission(Notification.permission);
         }
     }, []);
 
@@ -101,6 +190,7 @@ export function useNotifications({
 
         if (Notification.permission === "granted") {
             notificationPermissionRef.current = "granted";
+            setNotificationPermission("granted");
             return "granted" as NotificationPermission;
         }
 
@@ -110,6 +200,7 @@ export function useNotifications({
 
         const permission = await Notification.requestPermission();
         notificationPermissionRef.current = permission;
+        setNotificationPermission(permission);
         return permission;
     }, []);
 
@@ -128,8 +219,8 @@ export function useNotifications({
                 return null;
             }
 
-            // Don't show notifications if window is focused
-            if (isWindowFocused) {
+            // Don't show notifications if the app is focused and visible
+            if (isWindowFocused && isPageVisible) {
                 return null;
             }
 
@@ -156,7 +247,7 @@ export function useNotifications({
                 return null;
             }
         },
-        [isWindowFocused],
+        [isWindowFocused, isPageVisible],
     );
 
     // Play notification sound
@@ -164,7 +255,7 @@ export function useNotifications({
         try {
             const audio = new Audio("/sounds/notification.mp3");
             audio.volume = 0.5;
-            void audio.play().catch(() => {
+            audio.play().catch(() => {
                 // Audio playback might fail if user hasn't interacted with page
             });
         } catch {
@@ -178,165 +269,117 @@ export function useNotifications({
             return;
         }
 
-        const databaseId = env.databaseId;
         const collectionId = env.collections.messages;
-
-        if (!databaseId || !collectionId) {
+        if (!env.databaseId || !collectionId) {
             return;
         }
 
-        let unsubscribe: (() => void) | undefined;
-        let untrack: (() => void) | undefined;
         let cancelled = false;
+        let cleanup: (() => void) | undefined;
 
-        import("@/lib/realtime-pool")
-            .then(async ({ getSharedRealtime, trackSubscription }) => {
-                if (cancelled) {
-                    return;
-                }
+        const handleMessage = (event: RealtimeEvent) => {
+            // Only handle create events
+            if (!event.events.some((e) => e.endsWith(".create"))) {
+                return;
+            }
 
-                const realtime = getSharedRealtime();
-                const messageChannel = Channel.database(databaseId)
-                    .collection(collectionId)
-                    .document();
-                const messageChannelKey = messageChannel.toString();
+            const payload = event.payload;
+            const messageChannelId = payload.channelId as
+                | string
+                | undefined;
+            const senderId = payload.userId as string;
 
-                const handleMessage = (event: {
-                    events: string[];
-                    payload: Record<string, unknown>;
-                }) => {
-                    // Only handle create events
-                    if (!event.events.some((e) => e.endsWith(".create"))) {
-                        return;
-                    }
+            // Only process messages for the current channel
+            if (messageChannelId !== channelId) {
+                return;
+            }
 
-                    const payload = event.payload;
-                    const messageChannelId = payload.channelId as
+            // Don't notify for own messages
+            if (senderId === userId) {
+                return;
+            }
+
+            // Check if we should notify this user (async but fire-and-forget)
+            void (async () => {
+                try {
+                    const {
+                        shouldNotifyUser,
+                        buildNotificationPayload,
+                            extractMentionedUserIds,
+                        } = await import("@/lib/notification-triggers");
+                        const { hasEveryoneMention } = await import("@/lib/mention-utils");
+
+                    const messageText = payload.text as string;
+                    const mentionedUserIds =
+                        extractMentionedUserIds(messageText);
+                    const mentionsEveryone = hasEveryoneMention(messageText);
+                    const replyToAuthorId = payload.replyToAuthorId as
                         | string
                         | undefined;
-                    const senderId = payload.userId as string;
 
-                    // Only process messages for the current channel
-                    if (messageChannelId !== channelId) {
-                        return;
-                    }
+                    const result = await shouldNotifyUser({
+                        senderId,
+                        recipientId: userId,
+                        serverId: serverId ?? undefined,
+                        channelId,
+                        mentionedUserIds,
+                        mentionsEveryone,
+                        isReplyToRecipient: replyToAuthorId === userId,
+                    });
 
-                    // Don't notify for own messages
-                    if (senderId === userId) {
-                        return;
-                    }
-
-                    // Check if we should notify this user (async but fire-and-forget)
-                    void (async () => {
-                        try {
-                            const {
-                                shouldNotifyUser,
-                                buildNotificationPayload,
-                                    extractMentionedUserIds,
-                                } = await import("@/lib/notification-triggers");
-                                const { hasEveryoneMention } = await import("@/lib/mention-utils");
-
-                            const messageText = payload.text as string;
-                            const mentionedUserIds =
-                                extractMentionedUserIds(messageText);
-                            const mentionsEveryone = hasEveryoneMention(messageText);
-                            const replyToAuthorId = payload.replyToAuthorId as
-                                | string
-                                | undefined;
-
-                            const result = await shouldNotifyUser({
-                                senderId,
-                                recipientId: userId,
-                                serverId: serverId ?? undefined,
+                    if (result.shouldNotify) {
+                        const notificationPayload =
+                            buildNotificationPayload(result.type, {
+                                senderName:
+                                    (payload.userName as string) ??
+                                    "Someone",
+                                messageContent: messageText,
+                                channelName: undefined, // Would need to pass this in
+                                serverName: undefined, // Would need to pass this in
+                                messageId: payload.$id as string,
                                 channelId,
-                                mentionedUserIds,
-                                mentionsEveryone,
-                                isReplyToRecipient: replyToAuthorId === userId,
+                                serverId: serverId ?? undefined,
                             });
 
-                            if (result.shouldNotify) {
-                                const notificationPayload =
-                                    buildNotificationPayload(result.type, {
-                                        senderName:
-                                            (payload.userName as string) ??
-                                            "Someone",
-                                        messageContent: messageText,
-                                        channelName: undefined, // Would need to pass this in
-                                        serverName: undefined, // Would need to pass this in
-                                        messageId: payload.$id as string,
-                                        channelId,
-                                        serverId: serverId ?? undefined,
-                                    });
-
-                                if (result.showDesktop) {
-                                    showDesktopNotification(
-                                        notificationPayload.title,
-                                        {
-                                            body: notificationPayload.body,
-                                            icon: notificationPayload.icon,
-                                            tag: `message-${String(payload.$id)}`,
-                                            data: notificationPayload.data,
-                                        },
-                                    );
-                                }
-
-                                if (result.playSound) {
-                                    playNotificationSound();
-                                }
-                            }
-                        } catch {
-                            // Notification check failed, silently ignore
+                        if (result.showDesktop) {
+                            showDesktopNotification(
+                                notificationPayload.title,
+                                {
+                                    body: notificationPayload.body,
+                                    icon: notificationPayload.icon,
+                                    tag: `message-${String(payload.$id)}`,
+                                    data: notificationPayload.data,
+                                },
+                            );
                         }
-                    })();
-                };
 
-                // If we have a running subscription, attempt to update its queries
-                if (channelSubscriptionRef.current) {
-                    const existing = channelSubscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
-                    if (typeof existing.update === "function") {
-                        try {
-                            await existing.update({
-                                queries: [Query.equal("channelId", channelId)],
-                            });
-                            untrack = trackSubscription(messageChannelKey);
-                            unsubscribe = createRealtimeCleanup({
-                                contextId: channelId,
-                                contextLabel: "channel",
-                                subscription: channelSubscriptionRef.current,
-                                untrack,
-                            });
-                            return;
-                        } catch {
-                            // fallthrough to recreate
+                        if (result.playSound) {
+                            playNotificationSound();
                         }
                     }
+                } catch (notifyError) {
+                    logger.warn("Channel notification check failed", {
+                        channelId,
+                        error:
+                            notifyError instanceof Error
+                                ? notifyError.message
+                                : String(notifyError),
+                    });
                 }
+            })();
+        };
 
-                const subscription = await realtime.subscribe(
-                    messageChannel,
-                    handleMessage,
-                    [Query.equal("channelId", channelId)],
-                );
-
-                channelSubscriptionRef.current = subscription;
-
-                if (cancelled) {
-                    createRealtimeCleanup({
-                        contextId: channelId,
-                        contextLabel: "channel",
-                        subscription,
-                    })();
-                    channelSubscriptionRef.current = null;
-                    return;
-                }
-
-                untrack = trackSubscription(messageChannelKey);
-                unsubscribe = createRealtimeCleanup({
-                    contextId: channelId,
-                    contextLabel: "channel",
-                    subscription,
-                    untrack,
-                });
+        setupRealtimeSubscription({
+            collectionId,
+            queryField: "channelId",
+            queryValue: channelId,
+            contextLabel: "channel",
+            subscriptionRef: channelSubscriptionRef,
+            isCancelled: () => cancelled,
+            onEvent: handleMessage,
+        })
+            .then((result) => {
+                cleanup = result;
             })
             .catch((error) => {
                 if (cancelled) {
@@ -349,7 +392,7 @@ export function useNotifications({
                     {
                         channelId,
                         collectionId,
-                        databaseId,
+                        databaseId: env.databaseId,
                         serverId,
                     },
                 );
@@ -357,7 +400,8 @@ export function useNotifications({
 
         return () => {
             cancelled = true;
-            unsubscribe?.();
+            cleanup?.();
+            channelSubscriptionRef.current = null;
         };
     }, [
         userId,
@@ -375,147 +419,100 @@ export function useNotifications({
             return;
         }
 
-        const databaseId = env.databaseId;
         const collectionId = env.collections.directMessages;
-
-        if (!databaseId || !collectionId) {
+        if (!env.databaseId || !collectionId) {
             return;
         }
 
-        let cleanup: (() => void) | undefined;
         let cancelled = false;
+        let cleanup: (() => void) | undefined;
 
-        import("@/lib/realtime-pool")
-            .then(async ({ getSharedRealtime, trackSubscription }) => {
-                if (cancelled) {
-                    return;
-                }
+        const handleMessage = (response: RealtimeEvent) => {
+            const events = response.events;
 
-                const realtime = getSharedRealtime();
-                const messageChannel = Channel.database(databaseId)
-                    .collection(collectionId)
-                    .document();
-                const messageChannelKey = messageChannel.toString();
+            // Only handle create events
+            if (!events.some((e) => e.endsWith(".create"))) {
+                return;
+            }
 
-                const handleMessage = (response: {
-                    events: string[];
-                    payload: Record<string, unknown>;
-                }) => {
-                    const events = response.events;
+            const payload = response.payload;
+            const msgConversationId = payload.conversationId as string;
+            const senderId = payload.senderId as string;
 
-                    // Only handle create events
-                    if (!events.some((e) => e.endsWith(".create"))) {
-                        return;
-                    }
+            // Only process messages for the current conversation
+            if (msgConversationId !== conversationId) {
+                return;
+            }
 
-                    const payload = response.payload;
-                    const msgConversationId = payload.conversationId as string;
-                    const senderId = payload.senderId as string;
+            // Don't notify for own messages
+            if (senderId === userId) {
+                return;
+            }
 
-                    // Only process messages for the current conversation
-                    if (msgConversationId !== conversationId) {
-                        return;
-                    }
+            // Check if we should notify this user (async but fire-and-forget)
+            void (async () => {
+                try {
+                    const {
+                        shouldNotifyUser,
+                        buildNotificationPayload,
+                    } = await import("@/lib/notification-triggers");
 
-                    // Don't notify for own messages
-                    if (senderId === userId) {
-                        return;
-                    }
+                    const result = await shouldNotifyUser({
+                        senderId,
+                        recipientId: userId,
+                        conversationId,
+                    });
 
-                    // Check if we should notify this user (async but fire-and-forget)
-                    void (async () => {
-                        try {
-                            const {
-                                shouldNotifyUser,
-                                buildNotificationPayload,
-                            } = await import("@/lib/notification-triggers");
-
-                            const result = await shouldNotifyUser({
-                                senderId,
-                                recipientId: userId,
+                    if (result.shouldNotify) {
+                        const notificationPayload =
+                            buildNotificationPayload(result.type, {
+                                senderName:
+                                    (payload.senderName as string) ??
+                                    "Someone",
+                                messageContent:
+                                    (payload.content as string) ?? "",
                                 conversationId,
                             });
 
-                            if (result.shouldNotify) {
-                                const notificationPayload =
-                                    buildNotificationPayload(result.type, {
-                                        senderName:
-                                            (payload.senderName as string) ??
-                                            "Someone",
-                                        messageContent:
-                                            (payload.content as string) ?? "",
-                                        conversationId,
-                                    });
-
-                                if (result.showDesktop) {
-                                    showDesktopNotification(
-                                        notificationPayload.title,
-                                        {
-                                            body: notificationPayload.body,
-                                            icon: notificationPayload.icon,
-                                            tag: `dm-${String(payload.$id)}`,
-                                            data: notificationPayload.data,
-                                        },
-                                    );
-                                }
-
-                                if (result.playSound) {
-                                    playNotificationSound();
-                                }
-                            }
-                        } catch {
-                            // Notification check failed, silently ignore
+                        if (result.showDesktop) {
+                            showDesktopNotification(
+                                notificationPayload.title,
+                                {
+                                    body: notificationPayload.body,
+                                    icon: notificationPayload.icon,
+                                    tag: `dm-${String(payload.$id)}`,
+                                    data: notificationPayload.data,
+                                },
+                            );
                         }
-                    })();
-                };
 
-                // Try to update existing subscription if available
-                if (dmSubscriptionRef.current) {
-                    const existing = dmSubscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
-                    if (typeof existing.update === "function") {
-                        try {
-                            await existing.update({
-                                queries: [Query.equal("conversationId", conversationId)],
-                            });
-                            const untrack = trackSubscription(messageChannelKey);
-                            cleanup = createRealtimeCleanup({
-                                contextId: conversationId,
-                                contextLabel: "DM",
-                                subscription: dmSubscriptionRef.current,
-                                untrack,
-                            });
-                            return;
-                        } catch {
-                            // fallthrough to recreate
+                        if (result.playSound) {
+                            playNotificationSound();
                         }
                     }
+                } catch (notifyError) {
+                    logger.warn("DM notification check failed", {
+                        conversationId,
+                        error:
+                            notifyError instanceof Error
+                                ? notifyError.message
+                                : String(notifyError),
+                    });
                 }
+            })();
+        };
 
-                const subscription = await realtime.subscribe(
-                    messageChannel,
-                    handleMessage,
-                    [Query.equal("conversationId", conversationId)],
-                );
-
-                dmSubscriptionRef.current = subscription;
-
-                if (cancelled) {
-                    createRealtimeCleanup({
-                        contextId: conversationId,
-                        contextLabel: "DM",
-                        subscription,
-                    })();
-                    dmSubscriptionRef.current = null;
-                    return;
-                }
-
-                const untrack = trackSubscription(messageChannelKey);
-                cleanup = createRealtimeCleanup({
-                    contextId: conversationId,
-                    contextLabel: "DM",
-                    subscription,
-                    untrack,
-                });
+        setupRealtimeSubscription({
+            collectionId,
+            queryField: "conversationId",
+            queryValue: conversationId,
+            contextLabel: "DM",
+            subscriptionRef: dmSubscriptionRef,
+            isCancelled: () => cancelled,
+            onEvent: handleMessage,
+        })
+            .then((result) => {
+                cleanup = result;
             })
             .catch((error) => {
                 if (cancelled) {
@@ -528,7 +525,7 @@ export function useNotifications({
                     {
                         collectionId,
                         conversationId,
-                        databaseId,
+                        databaseId: env.databaseId,
                     },
                 );
             });
@@ -536,6 +533,7 @@ export function useNotifications({
         return () => {
             cancelled = true;
             cleanup?.();
+            dmSubscriptionRef.current = null;
         };
     }, [
         userId,
@@ -550,6 +548,6 @@ export function useNotifications({
         requestPermission,
         showDesktopNotification,
         playNotificationSound,
-        permission: notificationPermissionRef.current,
+        permission: notificationPermission,
     };
 }

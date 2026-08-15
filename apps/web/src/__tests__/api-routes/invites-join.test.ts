@@ -7,12 +7,15 @@ import * as appwriteInvites from "@/lib/appwrite-invites";
 vi.mock("@/lib/auth-server");
 vi.mock("@/lib/appwrite-invites");
 vi.mock("@/lib/newrelic-utils", () => ({
+	returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+	returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
 	logger: {
 		info: vi.fn(),
 		error: vi.fn(),
 		warn: vi.fn(),
 	},
 	recordError: vi.fn(),
+	getPostHogClient: () => ({ capture: vi.fn() }),
 }));
 
 describe("POST /api/invites/[code]/join", () => {
@@ -162,7 +165,7 @@ describe("POST /api/invites/[code]/join", () => {
 		const data = await response.json();
 
 		expect(response.status).toBe(500);
-		expect(data.error).toBe("Database connection lost");
+		expect(data.error).toBe("Failed to join server");
 	});
 
 	it("should handle non-Error exceptions", async () => {

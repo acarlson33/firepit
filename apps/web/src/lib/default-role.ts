@@ -4,6 +4,8 @@ import type { Databases } from "node-appwrite";
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
 import { getBrowserDatabases } from "./appwrite-core";
+import { listPages } from "./appwrite-pagination";
+import { logger } from "./newrelic-utils";
 
 const ROLES_COLLECTION_ID = "roles";
 const ROLE_ASSIGNMENTS_COLLECTION_ID = "role_assignments";
@@ -24,22 +26,129 @@ async function updateRoleMemberCount(
     serverId: string,
 ): Promise<void> {
     try {
-        const assignments = await databases.listDocuments(
+        const result = await databases.listDocuments(
             databaseId,
             ROLE_ASSIGNMENTS_COLLECTION_ID,
-            [Query.equal("serverId", serverId), Query.limit(1000)],
+            [
+                Query.equal("serverId", serverId),
+                Query.containsAny("roleIds", [roleId]),
+                Query.limit(1),
+            ],
         );
 
-        const memberCount = assignments.documents.filter((doc) => {
-            const roleIds = (doc.roleIds as string[] | undefined) ?? [];
-            return roleIds.includes(roleId);
-        }).length;
-
         await databases.updateDocument(databaseId, ROLES_COLLECTION_ID, roleId, {
-            memberCount,
+            memberCount: result.total,
         });
-    } catch {
-        // Non-critical; ignore count update failures
+    } catch (error) {
+        logger.warn("Failed to update role member count", {
+            roleId,
+            serverId,
+            errorMessage:
+                error instanceof Error ? error.message : String(error),
+        });
+    }
+}
+
+function isDuplicateConstraintError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as { type?: unknown; code?: unknown };
+    if (typeof candidate.code === "number" && candidate.code === 409) {
+        return true;
+    }
+    if (typeof candidate.type !== "string") {
+        return false;
+    }
+
+    return (
+        candidate.type === "row_already_exists" ||
+        candidate.type === "document_already_exists"
+    );
+}
+
+async function findRoleAssignment(
+    databases: Databases,
+    databaseId: string,
+    serverId: string,
+    userId: string,
+): Promise<Record<string, unknown> | null> {
+    const result = await databases.listDocuments(
+        databaseId,
+        ROLE_ASSIGNMENTS_COLLECTION_ID,
+        [
+            Query.equal("serverId", serverId),
+            Query.equal("userId", userId),
+            Query.limit(1),
+        ],
+    );
+    return result.documents[0]
+        ? (result.documents[0] as unknown as Record<string, unknown>)
+        : null;
+}
+
+// Merges a role into the user's assignment; tolerant of concurrent writers via
+// a unique (serverId, userId) index on role_assignments (create in the
+// Appwrite console). The create-race winner is the only successful create;
+// losers re-read and merge into the winner's document.
+async function ensureRoleInAssignment(
+    databases: Databases,
+    databaseId: string,
+    serverId: string,
+    userId: string,
+    roleId: string,
+): Promise<void> {
+    const mergeInto = async (assignment: Record<string, unknown>) => {
+        const currentRoleIds = Array.isArray(assignment.roleIds)
+            ? (assignment.roleIds as string[])
+            : [];
+        if (currentRoleIds.includes(roleId)) {
+            return;
+        }
+        await databases.updateDocument(
+            databaseId,
+            ROLE_ASSIGNMENTS_COLLECTION_ID,
+            String(assignment.$id),
+            { roleIds: [...currentRoleIds, roleId] },
+        );
+    };
+
+    const existing = await findRoleAssignment(
+        databases,
+        databaseId,
+        serverId,
+        userId,
+    );
+    if (existing) {
+        await mergeInto(existing);
+        return;
+    }
+
+    try {
+        await databases.createDocument(
+            databaseId,
+            ROLE_ASSIGNMENTS_COLLECTION_ID,
+            ID.unique(),
+            {
+                userId,
+                serverId,
+                roleIds: [roleId],
+            },
+        );
+    } catch (error) {
+        if (!isDuplicateConstraintError(error)) {
+            throw error;
+        }
+        const raced = await findRoleAssignment(
+            databases,
+            databaseId,
+            serverId,
+            userId,
+        );
+        if (raced) {
+            await mergeInto(raced);
+        }
     }
 }
 
@@ -73,40 +182,25 @@ async function applyDefaultRole(
 
     const defaultRoleId = String(defaultRole.$id);
 
-    // Check existing role assignment for the user on this server
-    const existingAssignments = await databases.listDocuments(
-        databaseId,
-        ROLE_ASSIGNMENTS_COLLECTION_ID,
-        [Query.equal("serverId", serverId), Query.equal("userId", userId), Query.limit(1)],
-    );
-
-    if (existingAssignments.documents.length > 0) {
-        const assignment = existingAssignments.documents[0];
-        const currentRoleIds = (assignment.roleIds as string[] | undefined) ?? [];
-        if (currentRoleIds.includes(defaultRoleId)) {
-            return true;
-        }
-        const updatedRoleIds = [...currentRoleIds, defaultRoleId];
-        await databases.updateDocument(
+    try {
+        await ensureRoleInAssignment(
+            databases,
             databaseId,
-            ROLE_ASSIGNMENTS_COLLECTION_ID,
-            String(assignment.$id),
-            { roleIds: updatedRoleIds },
+            serverId,
+            userId,
+            defaultRoleId,
         );
-        await updateRoleMemberCount(databases, databaseId, defaultRoleId, serverId);
-        return true;
+    } catch (error) {
+        logger.warn("Failed to apply default role assignment", {
+            serverId,
+            userId,
+            defaultRoleId,
+            errorMessage:
+                error instanceof Error ? error.message : String(error),
+        });
+        return false;
     }
 
-    await databases.createDocument(
-        databaseId,
-        ROLE_ASSIGNMENTS_COLLECTION_ID,
-        ID.unique(),
-        {
-            userId,
-            serverId,
-            roleIds: [defaultRoleId],
-        },
-    );
     await updateRoleMemberCount(databases, databaseId, defaultRoleId, serverId);
     return true;
 }
@@ -158,15 +252,17 @@ export async function enforceSingleDefaultRole(
     serverId: string,
     keepRoleId: string,
 ): Promise<void> {
-    const existingDefaults = await databases.listDocuments(
+    const existingDefaults = await listPages({
+        databases,
         databaseId,
-        ROLES_COLLECTION_ID,
-        [
+        collectionId: ROLES_COLLECTION_ID,
+        baseQueries: [
             Query.equal("serverId", serverId),
             Query.equal("defaultOnJoin", true),
-            Query.limit(50),
         ],
-    );
+        pageSize: 100,
+        warningContext: "enforceSingleDefaultRole",
+    });
 
     const toDisable = existingDefaults.documents.filter(
         (doc) => String(doc.$id) !== keepRoleId,

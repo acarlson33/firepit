@@ -4,24 +4,9 @@ import { NextResponse } from "next/server";
 import {
     dispatchScheduledAnnouncements,
     getAnnouncementRuntimeSettings,
+    parseLimit,
 } from "@/lib/appwrite-announcements";
-import { logger,
-    returnUnauthorized,
-    returnForbidden,
-} from "@/lib/newrelic-utils";
-
-function parseLimit(rawLimit: string | null): number {
-    if (!rawLimit) {
-        return 25;
-    }
-
-    const parsed = Number.parseInt(rawLimit, 10);
-    if (Number.isNaN(parsed)) {
-        return 25;
-    }
-
-    return Math.max(1, Math.min(parsed, 100));
-}
+import { logger } from "@/lib/newrelic-utils";
 
 export async function POST(request: Request) {
     const { dispatcherSecret, systemSenderUserId } =

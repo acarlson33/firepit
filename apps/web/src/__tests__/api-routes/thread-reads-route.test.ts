@@ -16,8 +16,22 @@ vi.mock("@/lib/auth-server", () => ({
 }));
 
 vi.mock("@/lib/thread-read-store", () => ({
+    CONCURRENT_DOCUMENT_QUERIES: 4,
     getThreadReads: mockGetThreadReads,
     upsertThreadReads: mockUpsertThreadReads,
+    runInBatches: async <T>(params: {
+        batchSize: number;
+        items: T[];
+        worker: (item: T) => Promise<void>;
+    }) => {
+        for (let index = 0; index < params.items.length; index += params.batchSize) {
+            await Promise.all(
+                params.items
+                    .slice(index, index + params.batchSize)
+                    .map((item) => params.worker(item)),
+            );
+        }
+    },
 }));
 
 describe("thread reads route", () => {

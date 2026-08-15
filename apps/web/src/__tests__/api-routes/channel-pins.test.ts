@@ -9,8 +9,22 @@ const { mockGetServerSession, mockGetDocument, mockListDocuments } = vi.hoisted(
     }),
 );
 
+const { mockGetChannelAccessForUser, mockIsDocumentNotFoundError } =
+    vi.hoisted(() => ({
+        mockGetChannelAccessForUser: vi.fn(),
+        mockIsDocumentNotFoundError: vi.fn(),
+    }));
+
 vi.mock("@/lib/auth-server", () => ({
     getServerSession: mockGetServerSession,
+}));
+
+vi.mock("@/lib/server-channel-access", () => ({
+    getChannelAccessForUser: mockGetChannelAccessForUser,
+}));
+
+vi.mock("@/lib/appwrite-admin", () => ({
+    isDocumentNotFoundError: mockIsDocumentNotFoundError,
 }));
 
 vi.mock("@/lib/appwrite-server", () => ({
@@ -34,6 +48,8 @@ vi.mock("@/lib/appwrite-core", () => ({
 }));
 
 vi.mock("@/lib/newrelic-utils", () => ({
+    returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+    returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     recordError: vi.fn(),
     setTransactionName: vi.fn(),
@@ -81,6 +97,14 @@ describe("Channel Pins API", () => {
 
         mockGetServerSession.mockResolvedValue({ $id: "user-1" });
         mockGetDocument.mockResolvedValue({ $id: "channel-1" });
+        mockIsDocumentNotFoundError.mockReturnValue(false);
+        mockGetChannelAccessForUser.mockResolvedValue({
+            serverId: "server-1",
+            isServerOwner: false,
+            isMember: true,
+            canRead: true,
+            canSend: true,
+        });
 
         mockListDocuments
             .mockResolvedValueOnce({

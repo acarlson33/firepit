@@ -6,11 +6,11 @@ const cursorRegex = /cursorAfter\(([^)]+)\)/;
 
 import { setupMockAppwrite } from "./__helpers__/mockAppwrite";
 
-// Tests the fallback (non-throwing) branches inside createServer where
-// membership creation and channel creation failures are swallowed.
+// Tests the fallback (non-throwing) branch inside createServer for channel
+// creation failures, and the atomic rollback branch for membership failures.
 
 describe("createServer fallback branches", () => {
-    it("swallows membership creation failure and still returns server + attempts channel", async () => {
+    it("rolls back the server document and rejects when membership creation fails", async () => {
         const cache = (global as any).require?.cache || {};
         for (const k of Object.keys(cache)) {
             if (k.includes("appwrite-servers") || k.includes("appwrite-core")) {
@@ -18,6 +18,7 @@ describe("createServer fallback branches", () => {
             }
         }
         const created: Array<{ collection: string; data: any }> = [];
+        const deleted: Array<{ collection: string; documentId: string }> = [];
         setupMockAppwrite({
             userId: "userA",
             overrides: {
@@ -31,6 +32,13 @@ describe("createServer fallback branches", () => {
                         $id: `${collectionId}-doc`,
                         ...data,
                     });
+                },
+                deleteDocument: (opts: any) => {
+                    deleted.push({
+                        collection: opts?.collectionId,
+                        documentId: opts?.documentId,
+                    });
+                    return Promise.resolve();
                 },
             },
         });
@@ -46,15 +54,16 @@ describe("createServer fallback branches", () => {
         const core = await import("../lib/appwrite-core");
         core.resetEnvCache();
         const { createServer } = await import("../lib/appwrite-servers");
-        const server = await createServer("Srv One", {
-            bypassFeatureCheck: true,
-        });
-        expect(server.name).toBe("Srv One");
-        // Ensure membership attempt happened and then channel attempt despite failure
+        await expect(
+            createServer("Srv One", { bypassFeatureCheck: true }),
+        ).rejects.toThrow("membership boom");
+        // Membership attempt happened, then the server document was rolled back.
         const collections = created.map((c) => c.collection);
         expect(collections[0]).toBe("servers");
         expect(collections).toContain("memberships");
-        expect(collections).toContain("channels");
+        expect(deleted).toEqual([
+            { collection: "servers", documentId: "servers-doc" },
+        ]);
     });
 
     it("swallows channel creation failure and still returns server + attempts membership", async () => {

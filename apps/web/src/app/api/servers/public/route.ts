@@ -7,10 +7,7 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getActualMemberCounts } from "@/lib/membership-count";
 import { mapServerDocument } from "@/lib/server-metadata";
-import { logger,
-    returnUnauthorized,
-    returnForbidden,
-} from "@/lib/newrelic-utils";
+import { logger } from "@/lib/newrelic-utils";
 import type { Server } from "@/lib/types";
 
 type ServerDocument = Models.Document & {
@@ -71,6 +68,10 @@ export async function GET(request: NextRequest) {
             Query.orderDesc("$createdAt"),
         ];
 
+        if (search) {
+            queries.push(Query.search("name", search));
+        }
+
         if (cursor) {
             queries.push(Query.cursorAfter(cursor));
         }
@@ -81,16 +82,12 @@ export async function GET(request: NextRequest) {
             queries,
         );
 
+        // hasMore is computed on the raw page before narrowing so pagination
+        // isn't broken when some fetched docs fail the document filter.
+        const hasMore = response.documents.length > limit;
+
         let serverDocuments = response.documents.filter(isPublicServerDocument);
 
-        if (search && serverDocuments.length > 0) {
-            const searchLower = search.toLowerCase();
-            serverDocuments = serverDocuments.filter((doc) =>
-                (doc.name || "").toLowerCase().includes(searchLower),
-            );
-        }
-
-        const hasMore = serverDocuments.length > limit;
         if (hasMore) {
             serverDocuments = serverDocuments.slice(0, limit);
         }
@@ -107,7 +104,7 @@ export async function GET(request: NextRequest) {
                 servers.push(
                     mapServerDocument(
                         doc,
-                        memberCountsByServerId.get(String(doc.$id)) ?? 0,
+                        memberCountsByServerId.counts.get(String(doc.$id)) ?? 0,
                     ),
                 );
             } catch (error) {

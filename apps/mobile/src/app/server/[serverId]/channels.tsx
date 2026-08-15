@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
     ActivityIndicator,
     Modal,
@@ -173,6 +174,8 @@ export default function ChannelManagementScreen() {
     useEffect(() => {
         void loadData();
     }, [loadData]);
+
+    useRetryOnReconnect(loadState === "error", loadData);
 
     const handleCreate = async () => {
         if (!instanceUrl || !accessToken || !normalizedServerId || saving) return;

@@ -2,6 +2,7 @@ import { ID, Permission, Query, Role } from "node-appwrite";
 
 import { getAdminClient } from "./appwrite-admin";
 import { getEnvConfig } from "./appwrite-core";
+import { listPages, chunkValues } from "./appwrite-pagination";
 import { getNotificationSettings, getNotificationSettingsBatch } from "./notification-settings";
 import type { BlockedUser, Friendship, RelationshipStatus } from "./types";
 
@@ -288,9 +289,16 @@ export async function getBlockStatus(userId: string, targetUserId: string) {
         () =>
             databases.listDocuments(DATABASE_ID, BLOCKS_COLLECTION_ID, [
                 Query.or([
-                    Query.equal("userId", userId),
-                    Query.equal("blockedUserId", userId),
+                    Query.and([
+                        Query.equal("userId", userId),
+                        Query.equal("blockedUserId", targetUserId),
+                    ]),
+                    Query.and([
+                        Query.equal("userId", targetUserId),
+                        Query.equal("blockedUserId", userId),
+                    ]),
                 ]),
+                Query.limit(2),
             ]) as Promise<RelationshipDocumentList>,
         { documents: [] },
     );
@@ -729,44 +737,73 @@ export async function getRelationshipMap(
     const { databases } = getAdminClient();
     const targetSet = new Set(uniqueUserIds);
 
-    const [friendshipResults, allBlocksResult, notifSettings] =
-        await Promise.all([
-            (async () => {
-                const friendshipsByPairKey = new Map<string, Friendship>();
-                for (let i = 0; i < pairKeys.length; i += BATCH_LIMIT) {
-                    const batch = pairKeys.slice(i, i + BATCH_LIMIT);
-                    const response = await readRelationshipData<RelationshipDocumentList>(
+    const [friendshipResults, blockDocs, notifSettings] = await Promise.all([
+        (async () => {
+            const friendshipsByPairKey = new Map<string, Friendship>();
+            const batches: string[][] = [];
+            for (let i = 0; i < pairKeys.length; i += BATCH_LIMIT) {
+                batches.push(pairKeys.slice(i, i + BATCH_LIMIT));
+            }
+            const responses = await Promise.all(
+                batches.map((batch) =>
+                    readRelationshipData<RelationshipDocumentList>(
                         () =>
                             databases.listDocuments(DATABASE_ID, FRIENDSHIPS_COLLECTION_ID, [
                                 Query.equal("pairKey", batch),
+                                Query.limit(BATCH_LIMIT),
                             ]) as Promise<RelationshipDocumentList>,
                         { documents: [] },
-                    );
-                    for (const doc of response.documents) {
-                        const f = toFriendship(doc);
-                        friendshipsByPairKey.set(f.pairKey, f);
-                    }
+                    ),
+                ),
+            );
+            for (const response of responses) {
+                for (const doc of response.documents) {
+                    const f = toFriendship(doc);
+                    friendshipsByPairKey.set(f.pairKey, f);
                 }
-                return friendshipsByPairKey;
-            })(),
-            readRelationshipData<RelationshipDocumentList>(
-                () =>
-                    databases.listDocuments(DATABASE_ID, BLOCKS_COLLECTION_ID, [
-                        Query.or([
-                            Query.equal("userId", userId),
-                            Query.equal("blockedUserId", userId),
-                        ]),
-                    ]) as Promise<RelationshipDocumentList>,
-                { documents: [] },
-            ),
-            getNotificationSettingsBatch(uniqueUserIds),
-        ]);
+            }
+            return friendshipsByPairKey;
+        })(),
+        (async () => {
+            const docs: Array<Record<string, unknown>> = [];
+            try {
+                for (const chunk of chunkValues(Array.from(targetSet), BATCH_LIMIT)) {
+                    const { documents } = await listPages({
+                        databases,
+                        databaseId: DATABASE_ID,
+                        collectionId: BLOCKS_COLLECTION_ID,
+                        baseQueries: [
+                            Query.or([
+                                Query.and([
+                                    Query.equal("userId", userId),
+                                    Query.equal("blockedUserId", chunk),
+                                ]),
+                                Query.and([
+                                    Query.equal("userId", chunk),
+                                    Query.equal("blockedUserId", userId),
+                                ]),
+                            ]),
+                        ],
+                        pageSize: 100,
+                        warningContext: "getRelationshipMap",
+                    });
+                    docs.push(...documents);
+                }
+            } catch (error) {
+                if (!isRelationshipSchemaError(error)) {
+                    throw error;
+                }
+            }
+            return docs;
+        })(),
+        getNotificationSettingsBatch(uniqueUserIds),
+    ]);
 
     const friendshipsByPairKey = friendshipResults;
     const blocksIBlocked = new Set<string>();
     const blocksThatBlockedMe = new Set<string>();
 
-    for (const doc of allBlocksResult.documents) {
+    for (const doc of blockDocs) {
         const blockerId = String(doc.userId);
         const blockedId = String(doc.blockedUserId);
         if (blockerId === userId && targetSet.has(blockedId)) {

@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
   ActivityIndicator,
   AppState,
@@ -436,9 +437,13 @@ export default function DirectMessageScreen() {
     void loadConversation();
   }, [loadConversation]);
 
+  useRetryOnReconnect(conversationLoadState === "error", loadConversation);
+
   useEffect(() => {
     void loadMessages();
   }, [loadMessages]);
+
+  useRetryOnReconnect(messagesLoadState === "error", () => void loadMessages());
 
   // Jump-to-unread: load last-read timestamp, calculate unread, mark as read
   useEffect(() => {

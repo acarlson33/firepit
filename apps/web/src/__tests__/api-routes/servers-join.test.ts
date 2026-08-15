@@ -68,6 +68,8 @@ vi.mock("node-appwrite", () => ({
 
 // Mock New Relic utilities
 vi.mock("@/lib/newrelic-utils", () => ({
+	returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+	returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
 	logger: {
 		info: vi.fn(),
 		warn: vi.fn(),
@@ -104,7 +106,7 @@ describe("Server Join API", () => {
 			const data = await response.json();
 
 			expect(response.status).toBe(401);
-			expect(data.error).toBe("Authentication required");
+			expect(data.error).toBe("Unauthorized");
 		});
 
 		it("should return 400 if serverId is missing", async () => {
@@ -240,7 +242,7 @@ describe("Server Join API", () => {
 			expect(response.status).toBe(200);
 			expect(data.success).toBe(true);
 			
-			// Verify membership was created
+			// Verify membership was created without document-level permissions
 			expect(mockCreateDocument).toHaveBeenCalledWith(
 				"test-db",
 				"memberships-collection",
@@ -249,8 +251,7 @@ describe("Server Join API", () => {
 					serverId: "server-1",
 					userId: "user-1",
 					role: "member",
-				},
-				expect.any(Array)
+				}
 			);
 
 			// Member count is no longer updated in DB

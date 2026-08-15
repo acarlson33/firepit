@@ -3,11 +3,7 @@ import { NextResponse } from "next/server";
 import { createServer } from "@/lib/appwrite-servers";
 import { getServerSession } from "@/lib/auth-server";
 import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
-import { logger,
-    returnUnauthorized,
-    returnForbidden,
-    getPostHogClient,
-} from "@/lib/newrelic-utils";
+import { logger, getPostHogClient } from "@/lib/newrelic-utils";
 import { normalizeServerFileId } from "@/lib/server-metadata";
 
 const MAX_SERVER_NAME_LENGTH = 100;
@@ -203,12 +199,8 @@ export async function POST(request: Request) {
             error: error instanceof Error ? error.message : String(error),
         });
 
-        // Return user-friendly error message
-        const message =
-            error instanceof Error ? error.message : "Failed to create server";
-
         return NextResponse.json(
-            { success: false, error: message },
+            { success: false, error: "Failed to create server" },
             { status: 500 },
         );
     }

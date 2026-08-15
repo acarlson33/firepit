@@ -12,6 +12,7 @@ type PollVoteRecord = {
 };
 
 const POLL_COMMAND_PREFIX = "/poll";
+const WHITESPACE_PATTERN = /\s/;
 const MAX_POLL_OPTIONS = 10;
 const MIN_POLL_OPTIONS = 2;
 const MAX_POLL_QUESTION_LENGTH = 300;
@@ -34,7 +35,7 @@ export type PollDocShape = {
     closedBy?: string;
 };
 
-type PollVoteDocShape = {
+export type PollVoteDocShape = {
     $id: string;
     pollId: string;
     userId: string;
@@ -46,7 +47,7 @@ function parseQuotedSegments(input: string): string[] | null {
     let index = 0;
 
     while (index < input.length) {
-        while (index < input.length && /\s/.test(input[index])) {
+        while (index < input.length && WHITESPACE_PATTERN.test(input[index])) {
             index += 1;
         }
 
@@ -69,7 +70,7 @@ function parseQuotedSegments(input: string): string[] | null {
         segments.push(segment);
         index += 1;
 
-        while (index < input.length && /\s/.test(input[index])) {
+        while (index < input.length && WHITESPACE_PATTERN.test(input[index])) {
             index += 1;
         }
 
@@ -154,7 +155,7 @@ export function isPollCommand(text: string): boolean {
     }
 
     const nextCharacter = trimmed.at(POLL_COMMAND_PREFIX.length) ?? "";
-    return /\s/.test(nextCharacter);
+    return WHITESPACE_PATTERN.test(nextCharacter);
 }
 
 export function parsePollCommand(text: string): ParsedPollCommand {
@@ -188,6 +189,10 @@ export function parsePollCommand(text: string): ParsedPollCommand {
         throw new Error(
             `Poll must include between ${MIN_POLL_OPTIONS} and ${MAX_POLL_OPTIONS} options.`,
         );
+    }
+
+    if (new Set(optionTexts).size !== optionTexts.length) {
+        throw new Error("Poll options must be unique.");
     }
 
     const options = optionTexts.map((optionText, optionIndex) => {

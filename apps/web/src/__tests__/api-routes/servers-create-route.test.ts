@@ -153,7 +153,7 @@ describe("Servers create route", () => {
         const data = await response.json();
 
         expect(response.status).toBe(500);
-        expect(data.error).toBe("disabled");
+        expect(data.error).toBe("Failed to create server");
     });
 
     it("returns 400 for invalid JSON payload", async () => {

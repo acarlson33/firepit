@@ -16,6 +16,8 @@ let subscribeQueueTail: Promise<void> = Promise.resolve();
 let sharedRealtimeGeneration = 0;
 let idleTeardownListenersInstalled = false;
 let activeSubscriptionCount = 0;
+let hiddenAt: number | null = null;
+const RECONNECT_AFTER_HIDDEN_MS = 30_000;
 
 function installIdleTeardownListeners() {
     if (idleTeardownListenersInstalled || typeof window === "undefined") {
@@ -33,12 +35,18 @@ function installIdleTeardownListeners() {
     window.addEventListener("pagehide", teardownIfIdle);
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") {
+            hiddenAt = Date.now();
             teardownIfIdle();
         } else if (document.visibilityState === "visible") {
+            const hiddenForMs = hiddenAt === null ? 0 : Date.now() - hiddenAt;
+            hiddenAt = null;
             // After sleep/wake, the WebSocket reconnect loop often fails
-            // because the session is stale. Force a fresh connection by
-            // disposing and immediately recreating the realtime instance.
-            void forceReconnectRealtime();
+            // because the session is stale. Only force a fresh connection when
+            // the page was hidden long enough to matter; leave healthy
+            // connections untouched.
+            if (hiddenForMs >= RECONNECT_AFTER_HIDDEN_MS) {
+                void forceReconnectRealtime();
+            }
         }
     });
 }
@@ -52,11 +60,15 @@ function installIdleTeardownListeners() {
 async function forceReconnectRealtime(): Promise<void> {
     if (!sharedRealtime) return;
 
-    // Use Reflect to access private members for forced reconnect
-    const r = sharedRealtime as any;
+    const realtime = sharedRealtime as object;
+
+    // Capture subscription ids before cleanup, which may clear the map.
+    const activeSubs = Reflect.get(realtime, "activeSubscriptions");
+    const subscriptionIds =
+        activeSubs instanceof Map ? Array.from(activeSubs.keys()) : [];
 
     // Cancel any in-flight reconnect attempts
-    r.reconnect = false;
+    Reflect.set(realtime, "reconnect", false);
 
     // Close the existing WebSocket connection
     try {
@@ -65,24 +77,48 @@ async function forceReconnectRealtime(): Promise<void> {
         // Ignore cleanup errors
     }
 
-    // Reset state for a fresh connection
-    r.reconnect = true;
-    r.appConnected = false;
-    r.reconnectAttempts = 0;
-    r.socket = undefined;
+    // Drop stale subscriptions regardless of teardown success so they can't
+    // linger on a socket that is about to be replaced.
+    if (activeSubs instanceof Map) {
+        activeSubs.clear();
+    }
 
-    // Re-enqueue all active subscriptions so they're sent on the new connection
-    const activeSubs = r.activeSubscriptions as Map<string, unknown>;
-    const enqueuePending = r.enqueuePendingSubscribe as (id: string) => void;
-    for (const subscriptionId of activeSubs.keys()) {
-        enqueuePending(subscriptionId);
+    // Reset state for a fresh connection
+    Reflect.set(realtime, "reconnect", true);
+    Reflect.set(realtime, "appConnected", false);
+    Reflect.set(realtime, "reconnectAttempts", 0);
+    Reflect.set(realtime, "socket", undefined);
+
+    // Re-enqueue captured subscriptions for the new connection.
+    const enqueuePending = Reflect.get(realtime, "enqueuePendingSubscribe");
+    if (typeof enqueuePending === "function") {
+        for (const subscriptionId of subscriptionIds) {
+            try {
+                (enqueuePending as (id: string) => void).call(
+                    realtime,
+                    subscriptionId,
+                );
+            } catch (error) {
+                logger.warn("Failed to re-enqueue realtime subscription", {
+                    subscriptionId,
+                    error: toErrorMessage(error),
+                });
+            }
+        }
+    } else {
+        logger.warn(
+            "Realtime SDK does not expose enqueuePendingSubscribe; subscriptions were not restored",
+        );
     }
 
     // Trigger a new WebSocket connection
-    try {
-        await r.createSocket();
-    } catch {
-        // The SDK's reconnect loop will retry if this fails
+    const createSocket = Reflect.get(realtime, "createSocket");
+    if (typeof createSocket === "function") {
+        try {
+            await (createSocket as () => unknown).call(realtime);
+        } catch {
+            // The SDK's reconnect loop will retry if this fails.
+        }
     }
 }
 
@@ -166,6 +202,26 @@ function toErrorMessage(error: unknown): string {
 }
 
 export function isTransientRealtimeSubscribeError(error: unknown): boolean {
+    const candidate =
+        typeof error === "object" && error !== null
+            ? (error as { name?: unknown; code?: unknown; message?: unknown })
+            : null;
+    const name = typeof candidate?.name === "string" ? candidate.name : "";
+    const code =
+        typeof candidate?.code === "string" || typeof candidate?.code === "number"
+            ? String(candidate.code)
+            : "";
+
+    if (["NetworkError", "TypeError", "ECONNRESET", "ETIMEDOUT"].includes(name)) {
+        return true;
+    }
+    if (["ECONNRESET", "ETIMEDOUT"].includes(code)) {
+        return true;
+    }
+    if (["AbortError", "InvalidStateError", "SecurityError"].includes(name)) {
+        return false;
+    }
+
     const message = toErrorMessage(error).toLowerCase();
 
     return (
@@ -209,8 +265,8 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
         let resolvedRawSubscription: unknown;
 
         interface RealtimeSubscriptionHandle {
-            (): Promise<() => Promise<void>>;
-            then: PromiseLike<() => Promise<void>>["then"];
+            (): Promise<void>;
+            then: PromiseLike<RealtimeSubscriptionHandle>["then"];
             close: () => Promise<void>;
             unsubscribe: () => Promise<void>;
             disconnect: () => Promise<void>;
@@ -274,40 +330,34 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
             },
         );
 
-        // Build a callable unsubscribe function that also exposes lifecycle
+        // Build callable unsubscribe functions that also expose lifecycle
         // methods. This maintains compatibility with code that expects a
         // function return value, while adding named methods for modern SDKs.
-        const callable = (() => {
-            return queuedUnsubscribe
-                .then((unsubscribe) => unsubscribe())
-                .catch((error) => {
-                    if (isStaleRealtimeSubscribeError(error)) {
+        const buildUnsubscribeFn = () => {
+            return () =>
+                queuedUnsubscribe
+                    .then((unsubscribe) => unsubscribe())
+                    .catch((error) => {
+                        if (isStaleRealtimeSubscribeError(error)) {
+                            return undefined;
+                        }
+
+                        logger.warn("Deferred realtime unsubscribe failed", {
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error),
+                        });
+
                         return undefined;
-                    }
-
-                    logger.warn("Deferred realtime unsubscribe failed", {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error),
                     });
-
-                    return undefined;
-                });
-        }) as (() => Promise<void>) & PromiseLike<() => Promise<void>>;
-
-        // Keep Promise-like then() so existing code that treats the return
-        // value as a promise continues to work.
-        callable.then = queuedUnsubscribe.then.bind(
-            queuedUnsubscribe,
-        ) as unknown as PromiseLike<() => Promise<void>>["then"];
+        };
 
         // Attach normalized lifecycle methods.
-        const attachMethods = () => {
-            const c = callable as unknown as RealtimeSubscriptionHandle;
+        const attachMethods = (handle: RealtimeSubscriptionHandle) => {
             // unsubscribe/close: prefer the queued unsubscribe promise to
             // ensure ordering with other queued operations.
-            c.unsubscribe = async () => {
+            handle.unsubscribe = async () => {
                 try {
                     await queuedUnsubscribe.then((u) => u());
                 } catch (err) {
@@ -322,13 +372,20 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
                 }
             };
 
-            c.close = async () => {
-                await c.unsubscribe();
+            handle.close = async () => {
+                await handle.unsubscribe();
             };
 
-            // disconnect: forward to underlying if present; otherwise call
+            // disconnect: wait for the pending subscribe to settle before
+            // forwarding to the underlying subscription; otherwise call
             // close as a fallback.
-            c.disconnect = async () => {
+            handle.disconnect = async () => {
+                try {
+                    await queuedUnsubscribe;
+                } catch {
+                    // Subscription never settled; fall through to close cleanup.
+                }
+
                 const raw = resolvedRawSubscription as
                     | { disconnect?: () => Promise<void> }
                     | undefined;
@@ -345,13 +402,13 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
                     }
                 }
 
-                return c.close();
+                return handle.close();
             };
 
             // update: forward to underlying subscription if it provides an
             // update method; otherwise throw a clear error so callers can
             // handle lack of support.
-            c.update = async (opts?: unknown) => {
+            handle.update = async (opts?: unknown) => {
                 await queuedUnsubscribe;
                 const raw = resolvedRawSubscription as
                     | { update?: (opts?: unknown) => Promise<void> }
@@ -366,7 +423,24 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
             };
         };
 
-        attachMethods();
+        const callable =
+            buildUnsubscribeFn() as unknown as RealtimeSubscriptionHandle;
+
+        attachMethods(callable);
+
+        // Keep Promise-like then() so existing code that treats the return
+        // value as a promise continues to work. Awaiting/chaining resolves to
+        // the settled unsubscribe function with lifecycle methods attached —
+        // the full handle — rather than a bare, method-less unsubscribe.
+        callable.then = (onFulfilled, onRejected) => {
+            const settled = queuedUnsubscribe.then((unsubscribe) => {
+                const handle =
+                    unsubscribe as unknown as RealtimeSubscriptionHandle;
+                attachMethods(handle);
+                return handle;
+            });
+            return settled.then(onFulfilled, onRejected);
+        };
 
         return callable as unknown as Realtime["subscribe"] extends (
             ...a: infer _Args
@@ -405,25 +479,47 @@ async function callLifecycleMethodIfPresent(
     return true;
 }
 
+function isSubscriptionLike(value: unknown): boolean {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const candidate = value as Record<string, unknown>;
+    if (typeof candidate.$id === "string") {
+        return true;
+    }
+    if (Array.isArray(candidate.channels)) {
+        return true;
+    }
+
+    return (
+        typeof candidate.close === "function" ||
+        typeof candidate.unsubscribe === "function" ||
+        typeof candidate.disconnect === "function"
+    );
+}
+
 function collectSubscriptionLikeValues(candidate: unknown): unknown[] {
     if (!candidate) {
         return [];
     }
 
     if (candidate instanceof Map) {
-        return Array.from(candidate.values());
+        return Array.from(candidate.values()).filter(isSubscriptionLike);
     }
 
     if (candidate instanceof Set) {
-        return Array.from(candidate.values());
+        return Array.from(candidate.values()).filter(isSubscriptionLike);
     }
 
     if (Array.isArray(candidate)) {
-        return candidate;
+        return candidate.filter(isSubscriptionLike);
     }
 
     if (typeof candidate === "object") {
-        return Object.values(candidate as Record<string, unknown>);
+        return Object.values(candidate as Record<string, unknown>).filter(
+            isSubscriptionLike,
+        );
     }
 
     return [];
@@ -619,8 +715,14 @@ export function trackSubscription(channel: string): () => void {
     activeSubscriptionCount += 1;
     const count = subscriptionRefs.get(channel) ?? 0;
     subscriptionRefs.set(channel, count + 1);
+    let released = false;
 
     return () => {
+        if (released) {
+            return;
+        }
+        released = true;
+
         activeSubscriptionCount = Math.max(0, activeSubscriptionCount - 1);
         const newCount = (subscriptionRefs.get(channel) ?? 1) - 1;
         if (newCount <= 0) {

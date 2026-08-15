@@ -1,5 +1,6 @@
 import { useLocalSearchParams, router } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
     ActivityIndicator,
     Linking,
@@ -275,6 +276,7 @@ export default function UserProfileScreen() {
     const [loadState, setLoadState] = useState<LoadState>("idle");
     const [error, setError] = useState<string | null>(null);
     const [profile, setProfile] = useState<UserProfile | null>(null);
+    const [reloadNonce, setReloadNonce] = useState(0);
     const [startingDm, setStartingDm] = useState<LoadState>("idle");
     const [actionError, setActionError] = useState<string | null>(null);
     const [reportVisible, setReportVisible] = useState(false);
@@ -337,7 +339,9 @@ export default function UserProfileScreen() {
         return () => {
             cancelled = true;
         };
-    }, [accessToken, instanceUrl, normalizedUserId]);
+    }, [accessToken, instanceUrl, normalizedUserId, reloadNonce]);
+
+    useRetryOnReconnect(loadState === "error", () => setReloadNonce((n) => n + 1));
 
     const profileFields = useMemo(
         () => [

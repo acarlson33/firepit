@@ -7,7 +7,6 @@ import { getServerSession } from "@/lib/auth-server";
 import { deleteChannel } from "@/lib/appwrite-servers";
 import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { logger,
-    returnUnauthorized,
     returnForbidden,
 } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
@@ -167,16 +166,45 @@ export async function PATCH(
             if (body.categoryId !== null && typeof body.categoryId !== "string") {
                 return NextResponse.json({ error: "categoryId must be a string or null" }, { status: 400 });
             }
-            updateData.categoryId = (body.categoryId === null ? "" : String(body.categoryId).trim()) || "";
+            const nextCategoryId = (body.categoryId === null ? "" : String(body.categoryId).trim()) || "";
+            if (nextCategoryId) {
+                try {
+                    const category = await databases.getDocument(
+                        databaseId,
+                        env.collections.categories,
+                        nextCategoryId,
+                    );
+                    if (String(category.serverId) !== String(accessResult.channel.serverId)) {
+                        return NextResponse.json(
+                            { error: "Category does not belong to this server" },
+                            { status: 400 },
+                        );
+                    }
+                } catch (error) {
+                    if (isDocumentNotFoundError(error)) {
+                        return NextResponse.json(
+                            { error: "Category not found" },
+                            { status: 400 },
+                        );
+                    }
+                    throw error;
+                }
+            }
+            updateData.categoryId = nextCategoryId;
         }
         if (body.position !== undefined) {
-            if (!Number.isInteger(body.position as number) || (body.position as number) < 0) {
+            const position = body.position;
+            if (
+                typeof position !== "number" ||
+                !Number.isInteger(position) ||
+                position < 0
+            ) {
                 return NextResponse.json(
                     { error: "position must be a non-negative integer" },
                     { status: 400 },
                 );
             }
-            updateData.position = body.position as number;
+            updateData.position = position;
         }
         if (body.type !== undefined) {
             if (typeof body.type !== "string") {

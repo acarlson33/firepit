@@ -3,7 +3,6 @@ import { getServerSession } from "@/lib/auth-server";
 import { useInvite } from "@/lib/appwrite-invites";
 import { logger, recordError,
     returnUnauthorized,
-    returnForbidden,
     getPostHogClient,
 } from "@/lib/newrelic-utils";
 import { invalidateChannelsUserCaches } from "@/lib/channels-route-cache";
@@ -12,7 +11,7 @@ import { invalidateChannelsUserCaches } from "@/lib/channels-route-cache";
  * POST /api/invites/[code]/join - Join a server via invite code
  */
 export async function POST(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   const startTime = Date.now();
@@ -51,16 +50,25 @@ export async function POST(
       duration: Date.now() - startTime,
     });
 
-    getPostHogClient().capture({
-      distinctId: userId,
-      event: "server_joined_via_invite",
-      properties: { serverId: result.serverId },
-    });
-
     if (typeof result.serverId === "string" && result.serverId.length > 0) {
       invalidateChannelsUserCaches({
         serverId: result.serverId,
         userId,
+      });
+    }
+
+    try {
+      getPostHogClient().capture({
+        distinctId: userId,
+        event: "server_joined_via_invite",
+        properties: { serverId: result.serverId },
+      });
+    } catch (analyticsError) {
+      logger.warn("Failed to capture invite join analytics", {
+        error:
+          analyticsError instanceof Error
+            ? analyticsError.message
+            : String(analyticsError),
       });
     }
 
@@ -83,9 +91,7 @@ export async function POST(
     });
 
     return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Failed to join server",
-      },
+      { error: "Failed to join server" },
       { status: 500 }
     );
   }

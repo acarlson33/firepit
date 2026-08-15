@@ -383,14 +383,24 @@ export async function GET(request: NextRequest, context: RouteContext) {
             }
         >();
 
-        for (const [senderId, profile] of profilesBatch) {
-            const avatarUrl = profile.avatarFileId
-                ? getAvatarUrl(profile.avatarFileId)
-                : undefined;
-            const avatarFrameUrl =
-                await getAvatarFrameUrlForProfile({
-                    avatarFramePreset: profile.avatarFramePreset,
-                });
+        const avatarFrameUrls = await Promise.all(
+            [...profilesBatch].map(async ([senderId, profile]) => {
+                const avatarUrl = profile.avatarFileId
+                    ? getAvatarUrl(profile.avatarFileId)
+                    : undefined;
+                const avatarFrameUrl =
+                    await getAvatarFrameUrlForProfile({
+                        avatarFramePreset: profile.avatarFramePreset,
+                    });
+                return [senderId, { avatarUrl, avatarFrameUrl }] as const;
+            }),
+        );
+
+        for (const [senderId, { avatarUrl, avatarFrameUrl }] of avatarFrameUrls) {
+            const profile = profilesBatch.get(senderId);
+            if (!profile) {
+                continue;
+            }
             profileMap.set(senderId, {
                 displayName: profile.displayName,
                 avatarUrl,

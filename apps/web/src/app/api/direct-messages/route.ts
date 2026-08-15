@@ -280,15 +280,61 @@ async function createAttachments(
     return createdIds;
 }
 
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+
+if (ALLOWED_ORIGINS.length === 0) {
+    logger.warn(
+        "ALLOWED_ORIGINS is empty; direct-messages route will only allow same-origin requests",
+    );
+}
+
+function getAllowedOrigin(request?: Request) {
+    const origin = request?.headers.get("origin");
+    if (!origin) {
+        return undefined;
+    }
+
+    return ALLOWED_ORIGINS.includes(origin) ? origin : undefined;
+}
+
+function isSameOrigin(request: Request, originHeader: string): boolean {
+    try {
+        return new URL(request.url).origin === originHeader;
+    } catch {
+        return false;
+    }
+}
+
+function ensureAllowedRequestOrigin(request: Request): string | null {
+    const origin = request.headers.get("origin");
+    if (!origin) {
+        return null;
+    }
+
+    if (isSameOrigin(request, origin)) {
+        return null;
+    }
+
+    return ALLOWED_ORIGINS.includes(origin) ? null : origin;
+}
+
 // Helper to create JSON responses with CORS headers
-function jsonResponse(data: unknown, init?: ResponseInit) {
+function jsonResponse(data: unknown, init?: ResponseInit, request?: Request) {
     const headers = new Headers(init?.headers);
-    headers.set("Access-Control-Allow-Origin", "*");
     headers.set(
         "Access-Control-Allow-Methods",
         "GET, POST, PATCH, DELETE, OPTIONS",
     );
     headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+    const allowedOrigin = getAllowedOrigin(request);
+    if (allowedOrigin) {
+        headers.set("Access-Control-Allow-Origin", allowedOrigin);
+        headers.set("Access-Control-Allow-Credentials", "true");
+    }
 
     return NextResponse.json(data, {
         ...init,
@@ -297,8 +343,17 @@ function jsonResponse(data: unknown, init?: ResponseInit) {
 }
 
 // Handle preflight requests
-export async function OPTIONS() {
-    return jsonResponse({});
+export async function OPTIONS(request: NextRequest) {
+    const disallowedOrigin = ensureAllowedRequestOrigin(request);
+    if (disallowedOrigin) {
+        return jsonResponse(
+            { error: "Origin is not allowed" },
+            { status: 403 },
+            request,
+        );
+    }
+
+    return jsonResponse({}, undefined, request);
 }
 
 /**
@@ -333,7 +388,7 @@ export async function GET(request: NextRequest) {
         // List all conversations for current user
         if (type === "conversations") {
             if (!CONVERSATIONS_COLLECTION) {
-                return jsonResponse({ conversations: [] });
+                return jsonResponse({ conversations: [] }, request);
             }
 
             const { databases } = getServerClient();
@@ -651,7 +706,7 @@ export async function GET(request: NextRequest) {
                 userId: session.$id,
             });
 
-            return jsonResponse({ conversations: enrichedConversations });
+            return jsonResponse({ conversations: enrichedConversations }, request);
         }
 
         // Get or create a conversation between two users
@@ -663,14 +718,14 @@ export async function GET(request: NextRequest) {
                 return jsonResponse(
                     { error: "userId1 and userId2 are required" },
                     { status: 400 },
-                );
+                 request);
             }
 
             if (!CONVERSATIONS_COLLECTION) {
                 return jsonResponse(
                     { error: "Conversations not configured" },
                     { status: 500 },
-                );
+                 request);
             }
 
             // Sort user IDs to ensure consistent ordering
@@ -680,14 +735,14 @@ export async function GET(request: NextRequest) {
                 return jsonResponse(
                     { error: "You can only access your own direct messages" },
                     { status: 403 },
-                );
+                 request);
             }
 
             if (includesSystemSenderParticipant(participants)) {
                 return jsonResponse(
                     { error: SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON },
                     { status: 403 },
-                );
+                 request);
             }
 
             const targetUserId = participants.find((id) => id !== session.$id);
@@ -695,7 +750,7 @@ export async function GET(request: NextRequest) {
                 return jsonResponse(
                     { error: "A target user is required" },
                     { status: 400 },
-                );
+                 request);
             }
 
             const { databases } = getServerClient();
@@ -835,7 +890,7 @@ export async function GET(request: NextRequest) {
                             dmEncryptionPeerPublicKey:
                                 encryptionState.dmEncryptionPeerPublicKey,
                         },
-                    });
+                    }, request);
                 }
 
                 if (conversationLookupTruncated) {
@@ -844,7 +899,7 @@ export async function GET(request: NextRequest) {
                             error: "Unable to safely determine whether a direct message already exists. Please try again.",
                         },
                         { status: 409 },
-                    );
+                     request);
                 }
             } catch (error) {
                 logger.error(
@@ -863,7 +918,7 @@ export async function GET(request: NextRequest) {
                         error: "Failed to verify existing direct message conversation",
                     },
                     { status: 500 },
-                );
+                 request);
             }
 
             const [relationship, encryptionState] = await Promise.all([
@@ -879,7 +934,7 @@ export async function GET(request: NextRequest) {
                         relationship,
                     },
                     { status: 403 },
-                );
+                 request);
             }
 
             // Create new conversation
@@ -946,7 +1001,7 @@ export async function GET(request: NextRequest) {
                     dmEncryptionPeerPublicKey:
                         encryptionState.dmEncryptionPeerPublicKey,
                 },
-            });
+            }, request);
         }
 
         // Fetch a single conversation by ID with otherUser populated
@@ -957,7 +1012,7 @@ export async function GET(request: NextRequest) {
                 return jsonResponse(
                     { error: "conversationId is required" },
                     { status: 400 },
-                );
+                 request);
             }
 
             const { databases } = getServerClient();
@@ -973,7 +1028,7 @@ export async function GET(request: NextRequest) {
                 return jsonResponse(
                     { error: "Conversation not found" },
                     { status: 404 },
-                );
+                 request);
             }
 
             const participants = Array.isArray(conversation.participants)
@@ -984,7 +1039,7 @@ export async function GET(request: NextRequest) {
                 return jsonResponse(
                     { error: "Forbidden" },
                     { status: 403 },
-                );
+                 request);
             }
 
             const isGroupConversation =
@@ -1060,7 +1115,7 @@ export async function GET(request: NextRequest) {
                     readOnly,
                     readOnlyReason,
                 },
-            });
+            }, request);
         }
 
         // List messages in a conversation
@@ -1073,11 +1128,11 @@ export async function GET(request: NextRequest) {
                 return jsonResponse(
                     { error: "conversationId is required" },
                     { status: 400 },
-                );
+                 request);
             }
 
             if (!DIRECT_MESSAGES_COLLECTION) {
-                return jsonResponse({ items: [], nextCursor: null });
+                return jsonResponse({ items: [], nextCursor: null }, request);
             }
 
             const { databases } = getServerClient();
@@ -1166,7 +1221,7 @@ export async function GET(request: NextRequest) {
                         return jsonResponse(
                             { error: "Forbidden" },
                             { status: 403 },
-                        );
+                         request);
                     }
 
                     const isGroupConversation =
@@ -1262,13 +1317,13 @@ export async function GET(request: NextRequest) {
                 dmEncryptionPeerEnabled,
                 dmEncryptionPeerPublicKey,
                 dmEncryptionSelfEnabled,
-            });
+            }, request);
         }
 
         return jsonResponse(
             { error: "Invalid type parameter" },
             { status: 400 },
-        );
+         request);
     } catch (error) {
         recordError(error instanceof Error ? error : new Error(String(error)), {
             context: "GET /api/direct-messages",
@@ -1288,7 +1343,7 @@ export async function GET(request: NextRequest) {
                         : "Internal server error",
             },
             { status: 500 },
-        );
+         request);
     }
 }
 
@@ -1337,7 +1392,7 @@ export async function POST(request: NextRequest) {
                 return jsonResponse(
                     { error: "Conversations not configured" },
                     { status: 500 },
-                );
+                 request);
             }
 
             const participantIds = Array.isArray(body.participants)
@@ -1352,7 +1407,7 @@ export async function POST(request: NextRequest) {
                 return jsonResponse(
                     { error: SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON },
                     { status: 403 },
-                );
+                 request);
             }
 
             if (participantIds.length < 3) {
@@ -1361,7 +1416,7 @@ export async function POST(request: NextRequest) {
                         error: "Group conversations require at least 3 participants",
                     },
                     { status: 400 },
-                );
+                 request);
             }
 
             const relationshipMap = await getRelationshipMap(
@@ -1388,7 +1443,7 @@ export async function POST(request: NextRequest) {
                         unavailableParticipants,
                     },
                     { status: 403 },
-                );
+                 request);
             }
 
             const sortedParticipants = [...participantIds].sort();
@@ -1436,7 +1491,7 @@ export async function POST(request: NextRequest) {
                     },
                 },
                 { status: 201 },
-            );
+             request);
         }
 
         const {
@@ -1463,7 +1518,7 @@ export async function POST(request: NextRequest) {
             return jsonResponse(
                 { error: normalizedAttachmentsResult.error },
                 { status: 400 },
-            );
+             request);
         }
         const normalizedAttachments = normalizedAttachmentsResult.attachments;
 
@@ -1525,7 +1580,7 @@ export async function POST(request: NextRequest) {
             return jsonResponse(
                 { error: "Missing required fields" },
                 { status: 400 },
-            );
+             request);
         }
 
         if (text && text.length > MAX_MESSAGE_LENGTH) {
@@ -1535,7 +1590,7 @@ export async function POST(request: NextRequest) {
                     maxLength: MAX_MESSAGE_LENGTH,
                 },
                 { status: 400 },
-            );
+             request);
         }
 
         if (
@@ -1547,7 +1602,7 @@ export async function POST(request: NextRequest) {
             return jsonResponse(
                 { error: "Encrypted message metadata is incomplete" },
                 { status: 400 },
-            );
+             request);
         }
 
         if (isEncrypted === true && !hasEncryptedText) {
@@ -1556,7 +1611,7 @@ export async function POST(request: NextRequest) {
                     error: "Encrypted messages must include encryptedText and encryption metadata",
                 },
                 { status: 400 },
-            );
+             request);
         }
 
         // Validate sender is the authenticated user — never trust client-provided senderId downstream
@@ -1564,14 +1619,14 @@ export async function POST(request: NextRequest) {
             return jsonResponse(
                 { error: "Cannot send message as another user" },
                 { status: 403 },
-            );
+             request);
         }
 
         if (!DIRECT_MESSAGES_COLLECTION || !CONVERSATIONS_COLLECTION) {
             return jsonResponse(
                 { error: "Direct messages not configured" },
                 { status: 500 },
-            );
+             request);
         }
 
         const { databases } = getServerClient();
@@ -1617,7 +1672,7 @@ export async function POST(request: NextRequest) {
             return jsonResponse(
                 { error: SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON },
                 { status: 403 },
-            );
+             request);
         }
 
         const targetReceiverId = isGroupConversation
@@ -1634,7 +1689,7 @@ export async function POST(request: NextRequest) {
             return jsonResponse(
                 { error: "receiverId is required for direct messages" },
                 { status: 400 },
-            );
+             request);
         }
 
         if (!isGroupConversation && targetReceiverId) {
@@ -1651,7 +1706,7 @@ export async function POST(request: NextRequest) {
                         relationship,
                     },
                     { status: 403 },
-                );
+                 request);
             }
         }
 
@@ -1761,7 +1816,7 @@ export async function POST(request: NextRequest) {
                             "Encrypted text is required for this conversation because DM encryption is enabled for both participants",
                     },
                     { status: 400 },
-                );
+                 request);
             }
         }
 
@@ -1773,7 +1828,7 @@ export async function POST(request: NextRequest) {
                             "Encrypted messages are only supported for one-to-one DMs",
                     },
                     { status: 400 },
-                );
+                 request);
             }
 
             if (
@@ -1786,7 +1841,7 @@ export async function POST(request: NextRequest) {
                             "Both participants must enable DM encryption before sending encrypted messages",
                     },
                     { status: 400 },
-                );
+                 request);
             }
 
             const senderProfilePublicKey =
@@ -1804,7 +1859,7 @@ export async function POST(request: NextRequest) {
                             "encryptionSenderPublicKey must match the sender profile public key",
                     },
                     { status: 400 },
-                );
+                 request);
             }
 
             const receiverProfilePublicKey =
@@ -1819,7 +1874,7 @@ export async function POST(request: NextRequest) {
                             "Recipient must have a published dmEncryptionPublicKey before accepting encrypted messages",
                     },
                     { status: 400 },
-                );
+                 request);
             }
         }
 
@@ -2154,7 +2209,7 @@ export async function POST(request: NextRequest) {
             responseMessage.attachments = normalizedAttachments;
         }
 
-        return jsonResponse({ message: responseMessage });
+        return jsonResponse({ message: responseMessage }, request);
     } catch (error) {
         recordError(error instanceof Error ? error : new Error(String(error)), {
             context: "POST /api/direct-messages",
@@ -2174,7 +2229,7 @@ export async function POST(request: NextRequest) {
                         : "Internal server error",
             },
             { status: 500 },
-        );
+         request);
     }
 }
 
@@ -2200,14 +2255,14 @@ export async function PATCH(request: NextRequest) {
             return jsonResponse(
                 { error: "Message ID is required" },
                 { status: 400 },
-            );
+             request);
         }
 
         const body = (await request.json()) as { text: string };
         const { text } = body;
 
         if (!text?.trim()) {
-            return jsonResponse({ error: "Text is required" }, { status: 400 });
+            return jsonResponse({ error: "Text is required" }, { status: 400 }, request);
         }
 
         if (text.length > MAX_MESSAGE_LENGTH) {
@@ -2217,14 +2272,14 @@ export async function PATCH(request: NextRequest) {
                     maxLength: MAX_MESSAGE_LENGTH,
                 },
                 { status: 400 },
-            );
+             request);
         }
 
         if (!DIRECT_MESSAGES_COLLECTION) {
             return jsonResponse(
                 { error: "Direct messages not configured" },
                 { status: 500 },
-            );
+             request);
         }
 
         const { databases } = getServerClient();
@@ -2241,7 +2296,7 @@ export async function PATCH(request: NextRequest) {
             return jsonResponse(
                 { error: "You can only edit your own messages" },
                 { status: 403 },
-            );
+             request);
         }
 
         if ((message as Record<string, unknown>).isEncrypted) {
@@ -2251,7 +2306,7 @@ export async function PATCH(request: NextRequest) {
                         "Encrypted direct messages cannot be edited after send",
                 },
                 { status: 409 },
-            );
+             request);
         }
 
         const updated = await databases.updateDocument(
@@ -2282,7 +2337,7 @@ export async function PATCH(request: NextRequest) {
                 $createdAt: updated.$createdAt,
                 editedAt: updated.editedAt,
             },
-        });
+        }, request);
     } catch (error) {
         logger.error("PATCH /api/direct-messages error", {
             error: error instanceof Error ? error.message : String(error),
@@ -2295,7 +2350,7 @@ export async function PATCH(request: NextRequest) {
                         : "Internal server error",
             },
             { status: 500 },
-        );
+         request);
     }
 }
 
@@ -2319,14 +2374,14 @@ export async function DELETE(request: NextRequest) {
             return jsonResponse(
                 { error: "Message ID is required" },
                 { status: 400 },
-            );
+             request);
         }
 
         if (!DIRECT_MESSAGES_COLLECTION) {
             return jsonResponse(
                 { error: "Direct messages not configured" },
                 { status: 500 },
-            );
+             request);
         }
 
         const { databases } = getServerClient();
@@ -2343,7 +2398,7 @@ export async function DELETE(request: NextRequest) {
             return jsonResponse(
                 { error: "You can only delete your own messages" },
                 { status: 403 },
-            );
+             request);
         }
 
         await databases.updateDocument(
@@ -2364,7 +2419,7 @@ export async function DELETE(request: NextRequest) {
             totalQueryTimeMs: Date.now() - startTime,
         });
 
-        return jsonResponse({ success: true });
+        return jsonResponse({ success: true }, request);
     } catch (error) {
         logger.error("DELETE /api/direct-messages error", {
             error: error instanceof Error ? error.message : String(error),
@@ -2377,6 +2432,6 @@ export async function DELETE(request: NextRequest) {
                         : "Internal server error",
             },
             { status: 500 },
-        );
+         request);
     }
 }

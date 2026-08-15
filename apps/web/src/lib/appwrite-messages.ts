@@ -1,7 +1,15 @@
 import { ID, Permission, Query, Role } from "appwrite";
 
-import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
+import {
+    ForbiddenError,
+    getBrowserDatabases,
+    getEnvConfig,
+    normalizeError,
+    UnauthorizedError,
+} from "./appwrite-core";
+import { chunkValues, listPages } from "./appwrite-pagination";
 import type { Message, FileAttachment } from "./types";
+import { logger } from "./client-logger";
 import { parseReactionsWithMetadata } from "./reactions-utils";
 import { resolveMessageImageUrl } from "./message-image-url";
 import { normalizeFileAttachment } from "./file-attachments";
@@ -11,6 +19,7 @@ const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
 const COLLECTION_ID = env.collections.messages;
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
+const MAX_MIGRATED_REACTION_DOCUMENTS = 500;
 const migratedReactionDocuments = new Set<string>();
 
 const MESSAGE_SELECT_FIELDS = [
@@ -81,29 +90,35 @@ async function enrichMessagesWithAttachments(
         // Get all message IDs
         const messageIds = messages.map((m) => m.$id);
 
-        // Query attachments for all messages
-        const response = await getDatabases().listDocuments({
-            databaseId: DATABASE_ID,
-            collectionId: MESSAGE_ATTACHMENTS_COLLECTION_ID,
-            queries: [
-                Query.equal("messageId", messageIds),
-                Query.equal("messageType", messageType),
-                Query.limit(
-                    Math.min(
+        // Query attachments for all messages, chunked to stay within
+        // Appwrite's Query.equal array limit and paginated per chunk.
+        const pages = await Promise.all(
+            chunkValues(messageIds, 100).map((messageIdChunk) =>
+                listPages({
+                    databases: getDatabases(),
+                    databaseId: DATABASE_ID,
+                    collectionId: MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                    baseQueries: [
+                        Query.equal("messageId", messageIdChunk),
+                        Query.equal("messageType", messageType),
+                        ...selectQuery(ATTACHMENT_SELECT_FIELDS),
+                    ],
+                    pageSize: Math.min(
                         1000,
                         Math.max(
                             50,
-                            messageIds.length * MAX_ATTACHMENTS_PER_MESSAGE,
+                            messageIdChunk.length * MAX_ATTACHMENTS_PER_MESSAGE,
                         ),
                     ),
-                ),
-                ...selectQuery(ATTACHMENT_SELECT_FIELDS),
-            ],
-        });
+                    warningContext: "enrichMessagesWithAttachments",
+                }),
+            ),
+        );
+        const responseDocuments = pages.flatMap((page) => page.documents);
 
         // Group attachments by messageId
         const attachmentsByMessageId = new Map<string, FileAttachment[]>();
-        for (const doc of response.documents) {
+        for (const doc of responseDocuments) {
             const d = doc as Record<string, unknown>;
             const messageId = String(d.messageId);
             const attachment = normalizeFileAttachment(d);
@@ -111,13 +126,9 @@ async function enrichMessagesWithAttachments(
                 continue;
             }
 
-            if (!attachmentsByMessageId.has(messageId)) {
-                attachmentsByMessageId.set(messageId, []);
-            }
-            const messageAttachments = attachmentsByMessageId.get(messageId);
-            if (messageAttachments) {
-                messageAttachments.push(attachment);
-            }
+            const messageAttachments = attachmentsByMessageId.get(messageId) ?? [];
+            messageAttachments.push(attachment);
+            attachmentsByMessageId.set(messageId, messageAttachments);
         }
 
         // Enrich messages with their attachments
@@ -128,8 +139,11 @@ async function enrichMessagesWithAttachments(
             }
             return message;
         });
-    } catch {
+    } catch (error) {
         // If attachment fetch fails, return messages without attachments
+        logger.warn("Failed to fetch message attachments", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return messages;
     }
 }
@@ -186,6 +200,10 @@ function scheduleReactionMigration(messageId: string, reactions: unknown) {
         return;
     }
 
+    if (migratedReactionDocuments.size >= MAX_MIGRATED_REACTION_DOCUMENTS) {
+        return;
+    }
+
     migratedReactionDocuments.add(key);
     void getDatabases()
         .updateDocument({
@@ -196,7 +214,16 @@ function scheduleReactionMigration(messageId: string, reactions: unknown) {
                 reactions: JSON.stringify(parsed.reactions),
             },
         })
-        .catch(() => {
+        .catch((error) => {
+            const normalized = normalizeError(error);
+            // Preserve the key for permission failures so unauthorized writes
+            // are not retried on every message load; only transient errors retry.
+            if (
+                normalized instanceof UnauthorizedError ||
+                normalized instanceof ForbiddenError
+            ) {
+                return;
+            }
             migratedReactionDocuments.delete(key);
         });
 }
@@ -262,7 +289,7 @@ function coerceMessage(raw: unknown): Message | null {
         $id: String(d.$id),
         userId: String(d.userId),
         userName: typeof d.userName === "string" ? d.userName : undefined,
-        text: String(d.text),
+        text: typeof d.text === "string" ? d.text : "",
         $createdAt: String(d.$createdAt ?? ""),
         channelId: typeof d.channelId === "string" ? d.channelId : undefined,
         editedAt: typeof d.editedAt === "string" ? d.editedAt : undefined,
@@ -366,7 +393,11 @@ export async function editMessage(messageId: string, text: string) {
         documentId: messageId,
         data: { text, editedAt },
     });
-    return res as unknown as Message;
+    const message = coerceMessage(res);
+    if (!message) {
+        throw new Error(`Failed to coerce edited message ${messageId}`);
+    }
+    return message;
 }
 
 /**
@@ -402,7 +433,11 @@ export async function softDeleteMessage(
         documentId: messageId,
         data: { removedAt, removedBy: moderatorId },
     });
-    return res as unknown as Message;
+    const message = coerceMessage(res);
+    if (!message) {
+        throw new Error(`Failed to coerce removed message ${messageId}`);
+    }
+    return message;
 }
 
 /**
@@ -418,11 +453,15 @@ export async function restoreMessage(messageId: string) {
         documentId: messageId,
         data: { removedAt: null, removedBy: null },
     });
-    return res as unknown as Message;
+    const message = coerceMessage(res);
+    if (!message) {
+        throw new Error(`Failed to coerce restored message ${messageId}`);
+    }
+    return message;
 }
 
 // Basic flood protection heuristic client-side
-const recent: string[] = [];
+const recent: number[] = [];
 const FLOOD_WINDOW_MS = 5000;
 const FLOOD_MAX_MESSAGES = 8;
 /**
@@ -432,13 +471,13 @@ const FLOOD_MAX_MESSAGES = 8;
 export function canSend() {
     const now = Date.now();
     const cutoff = now - FLOOD_WINDOW_MS;
-    while (recent.length && Number(recent[0]) < cutoff) {
+    while (recent.length && (recent.at(0) ?? 0) < cutoff) {
         recent.shift();
     }
     if (recent.length >= FLOOD_MAX_MESSAGES) {
         return false;
     }
-    recent.push(String(now));
+    recent.push(now);
     return true;
 }
 

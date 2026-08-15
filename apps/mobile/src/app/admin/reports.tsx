@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useState, useCallback, useEffect } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
     ActivityIndicator,
     Modal,
@@ -135,6 +136,8 @@ export default function ModerationScreen() {
     useEffect(() => {
         void loadMembers();
     }, [loadMembers]);
+
+    useRetryOnReconnect(loadState === "error", loadMembers);
 
     if (!serverId) {
         return (

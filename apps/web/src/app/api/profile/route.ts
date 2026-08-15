@@ -5,12 +5,26 @@ import {
     updateUserProfile,
     getAvatarUrl,
 } from "@/lib/appwrite-profiles";
+import { logger } from "@/lib/newrelic-utils";
+
+const URL_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+
+const MAX_TEXT_FIELD_LENGTHS: Record<
+    "displayName" | "bio" | "pronouns" | "location" | "website",
+    number
+> = {
+    displayName: 100,
+    bio: 1000,
+    pronouns: 50,
+    location: 100,
+    website: 2048,
+};
 
 function normalizeWebsiteInput(value: string | null): string | null {
     const trimmed = value?.trim() ?? "";
     if (!trimmed) return null;
 
-    const candidate = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)
+    const candidate = URL_SCHEME_PATTERN.test(trimmed)
         ? trimmed
         : `https://${trimmed}`;
 
@@ -33,7 +47,7 @@ export async function PATCH(request: Request) {
             );
         }
 
-        const body = (await request.json()) as {
+        let body: {
             displayName?: string;
             bio?: string;
             pronouns?: string;
@@ -42,6 +56,14 @@ export async function PATCH(request: Request) {
             profileBackgroundColor?: string | null;
             profileBackgroundGradient?: string | null;
         };
+        try {
+            body = await request.json();
+        } catch {
+            return NextResponse.json(
+                { error: "Invalid JSON body" },
+                { status: 400 },
+            );
+        }
 
         if (
             body.displayName === undefined &&
@@ -54,6 +76,57 @@ export async function PATCH(request: Request) {
         ) {
             return NextResponse.json(
                 { error: "At least one field must be provided" },
+                { status: 400 },
+            );
+        }
+
+        const textFields = [
+            "displayName",
+            "bio",
+            "pronouns",
+            "location",
+            "website",
+        ] as const;
+        for (const field of textFields) {
+            const value = body[field];
+            if (value === undefined) {
+                continue;
+            }
+            if (typeof value !== "string") {
+                return NextResponse.json(
+                    { error: `${field} must be a string` },
+                    { status: 400 },
+                );
+            }
+            if (value.length > MAX_TEXT_FIELD_LENGTHS[field]) {
+                return NextResponse.json(
+                    {
+                        error: `${field} must be ${MAX_TEXT_FIELD_LENGTHS[field]} characters or fewer`,
+                    },
+                    { status: 400 },
+                );
+            }
+        }
+
+        for (const field of [
+            "profileBackgroundColor",
+            "profileBackgroundGradient",
+        ] as const) {
+            const value = body[field];
+            if (value !== undefined && typeof value !== "string" && value !== null) {
+                return NextResponse.json(
+                    { error: `${field} must be a string or null` },
+                    { status: 400 },
+                );
+            }
+        }
+
+        if (body.profileBackgroundColor && body.profileBackgroundGradient) {
+            return NextResponse.json(
+                {
+                    error:
+                        "Provide either profileBackgroundColor or profileBackgroundGradient, not both",
+                },
                 { status: 400 },
             );
         }
@@ -74,7 +147,14 @@ export async function PATCH(request: Request) {
             updateData.location = body.location || null;
         }
         if (body.website !== undefined) {
-            updateData.website = normalizeWebsiteInput(body.website);
+            const normalizedWebsite = normalizeWebsiteInput(body.website);
+            if (body.website.trim() && !normalizedWebsite) {
+                return NextResponse.json(
+                    { error: "Invalid website URL" },
+                    { status: 400 },
+                );
+            }
+            updateData.website = normalizedWebsite;
         }
         if (body.profileBackgroundColor !== undefined) {
             updateData.profileBackgroundColor = body.profileBackgroundColor || null;
@@ -103,13 +183,11 @@ export async function PATCH(request: Request) {
             profileBackgroundGradient: updatedProfile.profileBackgroundGradient,
         });
     } catch (error) {
+        logger.error("Failed to update profile", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to update profile",
-            },
+            { error: "Failed to update profile" },
             { status: 500 },
         );
     }

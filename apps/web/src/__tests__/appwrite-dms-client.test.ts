@@ -9,7 +9,6 @@ import {
   listDirectMessages,
   deleteDirectMessage,
   editDirectMessage,
-  loadMessageImages,
 } from "@/lib/appwrite-dms-client";
 
 // Mock fetch globally
@@ -561,41 +560,6 @@ describe("appwrite-dms-client", () => {
       await expect(editDirectMessage("msg123", "Updated")).rejects.toThrow(
         "Edit failed"
       );
-    });
-  });
-
-  describe("loadMessageImages", () => {
-    it("should return empty map for messages without images", async () => {
-      const messages = [
-        { $id: "msg1", text: "Test", imageFileId: null },
-        { $id: "msg2", text: "No image" },
-      ];
-
-      const result = await loadMessageImages(messages as never[]);
-
-      expect(result).toBeInstanceOf(Map);
-      expect(result.size).toBe(0);
-      expect(mockFetch).not.toHaveBeenCalled();
-    });
-
-    it("should return empty map for messages with existing imageUrl", async () => {
-      const messages = [
-        { $id: "msg1", imageFileId: "img1", imageUrl: "existing.png", text: "Has URL" },
-      ];
-
-      const result = await loadMessageImages(messages as never[]);
-
-      expect(result).toBeInstanceOf(Map);
-      expect(result.size).toBe(0);
-      expect(mockFetch).not.toHaveBeenCalled();
-    });
-
-    it("should return empty map for empty array", async () => {
-      const result = await loadMessageImages([]);
-
-      expect(result).toBeInstanceOf(Map);
-      expect(result.size).toBe(0);
-      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 });

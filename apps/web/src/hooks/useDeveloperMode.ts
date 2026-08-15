@@ -56,6 +56,7 @@ export function useDeveloperMode(userId: string | null) {
 
     const updatePreferenceMutation = useMutation({
         mutationFn: updateDeveloperModePreference,
+        scope: { id: `developer-mode:${userId ?? "anonymous"}` },
         onMutate: async (patch) => {
             await queryClient.cancelQueries({ queryKey });
             const previousValue =

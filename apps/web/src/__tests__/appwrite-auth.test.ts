@@ -43,7 +43,7 @@ vi.mock("appwrite", async (orig) => {
     }
   }
   const accountClass = Account;
-  const merged = { ...base, accountClass };
+  const merged = { ...base, ID: { unique: () => "fixed-id" }, accountClass };
   Object.defineProperty(merged, "Account", {
     value: accountClass,
     enumerable: true,
@@ -58,14 +58,11 @@ function setEnv() {
 }
 
 describe("appwrite-auth", () => {
-  it("register creates user with random id", async () => {
+  it("register creates user with sdk-provided id", async () => {
     setEnv();
-    const origUuid = (crypto as any).randomUUID;
-    (crypto as any).randomUUID = () => "fixed-id";
     const { register } = await load();
     const u = await register("e@example.com", "pw", "Name");
     expect(u.$id).toBe("fixed-id");
-    (crypto as any).randomUUID = origUuid;
   });
   it("login returns session object", async () => {
     setEnv();

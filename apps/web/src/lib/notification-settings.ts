@@ -95,63 +95,17 @@ function cloneOverrideLabels(
     return JSON.parse(JSON.stringify(value)) as NotificationOverrideLabelMap;
 }
 
-async function ensureDmEncryptionSettingsAttribute(): Promise<boolean> {
-    const { databases } = getAdminClient();
-    const env = getEnvConfig();
-
-    const dbAny = databases as unknown as {
-        createBooleanAttribute?: (...args: unknown[]) => Promise<unknown>;
-    };
-
-    if (typeof dbAny.createBooleanAttribute !== "function") {
-        return false;
-    }
-
-    try {
-        await dbAny.createBooleanAttribute(
-            env.databaseId,
-            env.collections.notificationSettings,
-            DM_ENCRYPTION_ATTRIBUTE_KEY,
-            false,
-        );
-        return true;
-    } catch (error) {
-        const message = getErrorMessage(error).toLowerCase();
-        if (
-            message.includes("already exists") ||
-            message.includes("attribute_already_exists")
-        ) {
-            return true;
-        }
-
-        return false;
-    }
-}
-
-async function runWithDmEncryptionAttributeRecovery<T>(
+async function runNotificationSettingsOperation<T>(
     operation: () => Promise<T>,
 ): Promise<T> {
     try {
         return await operation();
     } catch (error) {
-        if (!isMissingDmEncryptionAttributeError(error)) {
-            throw error;
-        }
-
-        const repaired = await ensureDmEncryptionSettingsAttribute();
-        if (!repaired) {
+        if (isMissingDmEncryptionAttributeError(error)) {
             throw createSchemaUnavailableError();
         }
 
-        try {
-            return await operation();
-        } catch (retryError) {
-            if (isMissingDmEncryptionAttributeError(retryError)) {
-                throw createSchemaUnavailableError();
-            }
-
-            throw retryError;
-        }
+        throw error;
     }
 }
 
@@ -689,13 +643,53 @@ export async function buildNotificationSettingsResponse(
  * @returns {Promise<NotificationSettings | null>} The return value.
  */
 const NOTIF_SETTINGS_CACHE_TTL_MS = 30_000;
+const NOTIF_SETTINGS_CACHE_MAX_SIZE = 5_000;
 const notifSettingsCache = new Map<string, { data: NotificationSettings | null; ts: number }>();
+
+function getNotifSettingsCache(userId: string): {
+    data: NotificationSettings | null;
+    ts: number;
+} | null {
+    const cached = notifSettingsCache.get(userId);
+    if (!cached) {
+        return null;
+    }
+
+    // Refresh recency so recently used entries survive eviction (LRU).
+    notifSettingsCache.delete(userId);
+    notifSettingsCache.set(userId, cached);
+    return cached;
+}
+
+function setNotifSettingsCache(
+    userId: string,
+    data: NotificationSettings | null,
+    ts = Date.now(),
+): void {
+    notifSettingsCache.delete(userId);
+    notifSettingsCache.set(userId, { data, ts });
+
+    if (notifSettingsCache.size > NOTIF_SETTINGS_CACHE_MAX_SIZE) {
+        const oldestKey = notifSettingsCache.keys().next().value;
+        if (typeof oldestKey === "string") {
+            notifSettingsCache.delete(oldestKey);
+        }
+    }
+}
+
+export function clearNotificationSettingsCache() {
+    notifSettingsCache.clear();
+}
+
+function removeNotifSettingsCache(userId: string): void {
+    notifSettingsCache.delete(userId);
+}
 
 export async function getNotificationSettings(
     userId: string,
 ): Promise<NotificationSettings | null> {
     try {
-        const cached = notifSettingsCache.get(userId);
+        const cached = getNotifSettingsCache(userId);
         if (cached && Date.now() - cached.ts < NOTIF_SETTINGS_CACHE_TTL_MS) {
             return cached.data;
         }
@@ -710,7 +704,7 @@ export async function getNotificationSettings(
         );
 
         if (result.documents.length === 0) {
-            notifSettingsCache.set(userId, { data: null, ts: Date.now() });
+            setNotifSettingsCache(userId, null);
             return null;
         }
 
@@ -719,7 +713,7 @@ export async function getNotificationSettings(
         );
 
         const settings = documentToSettings(document);
-        notifSettingsCache.set(userId, { data: settings, ts: Date.now() });
+        setNotifSettingsCache(userId, settings);
         return settings;
     } catch {
         return null;
@@ -746,7 +740,7 @@ export async function getNotificationSettingsBatch(
     const now = Date.now();
 
     for (const uid of uniqueIds) {
-        const cached = notifSettingsCache.get(uid);
+        const cached = getNotifSettingsCache(uid);
         if (cached && now - cached.ts < NOTIF_SETTINGS_CACHE_TTL_MS) {
             result.set(uid, cached.data);
         } else {
@@ -775,15 +769,16 @@ export async function getNotificationSettingsBatch(
                     const uid = String(record.userId);
                     const settings = documentToSettings(record);
                     found.set(uid, settings);
-                    notifSettingsCache.set(uid, { data: settings, ts: now });
+                    setNotifSettingsCache(uid, settings, now);
                 }
 
                 for (const uid of batch) {
-                    if (!found.has(uid)) {
-                        notifSettingsCache.set(uid, { data: null, ts: now });
+                    const settings = found.get(uid);
+                    if (settings === undefined) {
+                        setNotifSettingsCache(uid, null, now);
                         result.set(uid, null);
                     } else {
-                        result.set(uid, found.get(uid)!);
+                        result.set(uid, settings);
                     }
                 }
 
@@ -863,7 +858,7 @@ export async function createNotificationSettings(
         conversationOverrides: JSON.stringify(data.conversationOverrides ?? {}),
     };
 
-    const doc = await runWithDmEncryptionAttributeRecovery(() =>
+    const doc = await runNotificationSettingsOperation(() =>
         databases.createDocument(
             env.databaseId,
             env.collections.notificationSettings,
@@ -872,6 +867,9 @@ export async function createNotificationSettings(
             perms.serverOwner(userId),
         ),
     );
+
+    // Clear any negative ("settings missing") cache entry.
+    removeNotifSettingsCache(userId);
 
     return documentToSettings(doc as unknown as Record<string, unknown>);
 }
@@ -937,7 +935,7 @@ export async function updateNotificationSettings(
         );
     }
 
-    const doc = await runWithDmEncryptionAttributeRecovery(() =>
+    const doc = await runNotificationSettingsOperation(() =>
         databases.updateDocument(
             env.databaseId,
             env.collections.notificationSettings,
@@ -945,6 +943,14 @@ export async function updateNotificationSettings(
             updateData,
         ),
     );
+
+    // Invalidate the cached copy so subsequent reads pick up the change.
+    const updatedUserId = String(
+        (doc as unknown as Record<string, unknown>).userId ?? "",
+    );
+    if (updatedUserId) {
+        removeNotifSettingsCache(updatedUserId);
+    }
 
     return documentToSettings(doc as unknown as Record<string, unknown>);
 }
@@ -1191,7 +1197,7 @@ export function isInQuietHours(settings: NotificationSettings): boolean {
                 timeZone: settings.quietHoursTimezone,
                 hour: "2-digit",
                 minute: "2-digit",
-                hour12: false,
+                hourCycle: "h23",
             });
             const parts = formatter.formatToParts(now);
             const hours = Number(

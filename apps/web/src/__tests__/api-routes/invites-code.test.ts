@@ -17,6 +17,8 @@ vi.mock("@/lib/appwrite-roles", () => ({
 }));
 vi.mock("@/lib/appwrite-invites");
 vi.mock("@/lib/newrelic-utils", () => ({
+    returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+    returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
     logger: {
         info: vi.fn(),
         error: vi.fn(),
@@ -134,7 +136,7 @@ describe("GET /api/invites/[code]", () => {
         const data = await response.json();
 
         expect(response.status).toBe(500);
-        expect(data.error).toBe("Database error");
+        expect(data.error).toBe("Failed to get invite");
     });
 });
 
@@ -421,6 +423,6 @@ describe("DELETE /api/invites/[code]", () => {
         const data = await response.json();
 
         expect(response.status).toBe(500);
-        expect(data.error).toBe("Database error");
+        expect(data.error).toBe("Failed to revoke invite");
     });
 });

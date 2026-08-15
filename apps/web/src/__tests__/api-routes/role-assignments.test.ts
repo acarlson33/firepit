@@ -16,6 +16,7 @@ const {
     mockCreateDocument,
     mockUpdateDocument,
     mockDeleteDocument,
+    mockGetDocument,
     mockGetServerSession,
     mockGetServerPermissionsForUser,
 } = vi.hoisted(() => ({
@@ -23,6 +24,7 @@ const {
     mockCreateDocument: vi.fn(),
     mockUpdateDocument: vi.fn(),
     mockDeleteDocument: vi.fn(),
+    mockGetDocument: vi.fn(),
     mockGetServerSession: vi.fn(),
     mockGetServerPermissionsForUser: vi.fn(),
 }));
@@ -33,6 +35,9 @@ vi.mock("@/lib/auth-server", () => ({
 
 vi.mock("@/lib/server-channel-access", () => ({
     getServerPermissionsForUser: mockGetServerPermissionsForUser,
+    invalidateServerAccessCacheForUser: vi.fn(),
+    invalidateServerAccessCacheForServer: vi.fn(),
+    invalidateChannelAccessCache: vi.fn(),
 }));
 
 // Mock dependencies
@@ -43,6 +48,7 @@ vi.mock("@/lib/appwrite-server", () => ({
             createDocument: mockCreateDocument,
             updateDocument: mockUpdateDocument,
             deleteDocument: mockDeleteDocument,
+            getDocument: mockGetDocument,
         },
     })),
 }));
@@ -62,6 +68,7 @@ vi.mock("@/lib/appwrite-core", () => ({
 }));
 
 vi.mock("node-appwrite", () => ({
+    AppwriteException: class AppwriteException extends Error {},
     Client: vi.fn().mockImplementation(() => ({
         setEndpoint: vi.fn().mockReturnThis(),
         setProject: vi.fn().mockReturnThis(),
@@ -96,6 +103,10 @@ describe("Role Assignments API", () => {
         mockGetServerPermissionsForUser.mockResolvedValue({
             isMember: true,
             permissions: { manageRoles: true },
+        });
+        mockGetDocument.mockResolvedValue({
+            $id: "role-1",
+            serverId: "server-1",
         });
 
         // Dynamically import the route handlers
@@ -183,16 +194,27 @@ describe("Role Assignments API", () => {
         });
 
         it("should get roles for a specific user", async () => {
-            mockListDocuments.mockResolvedValue({
-                documents: [
-                    {
-                        $id: "assignment-1",
-                        userId: "user-1",
-                        serverId: "server-1",
-                        roleIds: ["role-1", "role-2"],
-                    },
-                ],
-            });
+            mockListDocuments
+                .mockResolvedValueOnce({
+                    documents: [
+                        {
+                            $id: "assignment-1",
+                            userId: "user-1",
+                            serverId: "server-1",
+                            roleIds: ["role-1", "role-2"],
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({
+                    documents: [
+                        {
+                            $id: "profile-1",
+                            userId: "user-1",
+                            displayName: "User One",
+                            userName: "userone",
+                        },
+                    ],
+                });
 
             const url = new URL("http://localhost/api/role-assignments");
             url.searchParams.set("serverId", "server-1");
@@ -203,8 +225,10 @@ describe("Role Assignments API", () => {
             const data = await response.json();
 
             expect(response.status).toBe(200);
-            expect(Array.isArray(data)).toBe(true);
-            expect(data[0].roleIds).toEqual(["role-1", "role-2"]);
+            expect(data.members).toHaveLength(1);
+            expect(data.members[0].roleIds).toEqual(["role-1", "role-2"]);
+            expect(data.total).toBe(1);
+            expect(data.truncated).toBe(false);
         });
 
         it("should return 400 if serverId is missing", async () => {
@@ -352,6 +376,117 @@ describe("Role Assignments API", () => {
             expect(response.status).toBe(400);
             expect(data.error).toContain("required");
         });
+
+        it("should return 404 if the role does not exist", async () => {
+            mockGetDocument.mockRejectedValue(
+                Object.assign(new Error("missing"), {
+                    type: "document_not_found",
+                }),
+            );
+
+            const request = new NextRequest(
+                "http://localhost/api/role-assignments",
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        userId: "user-1",
+                        serverId: "server-1",
+                        roleId: "role-missing",
+                    }),
+                },
+            );
+
+            const response = await POST(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(404);
+            expect(data.error).toContain("Role not found");
+        });
+
+        it("should return 400 if the role belongs to another server", async () => {
+            mockGetDocument.mockResolvedValue({
+                $id: "role-9",
+                serverId: "server-9",
+            });
+
+            const request = new NextRequest(
+                "http://localhost/api/role-assignments",
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        userId: "user-1",
+                        serverId: "server-1",
+                        roleId: "role-9",
+                    }),
+                },
+            );
+
+            const response = await POST(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(400);
+            expect(data.error).toContain("does not belong to this server");
+        });
+
+        it("should retry assignment creation when a duplicate-create conflict occurs", async () => {
+            // Membership check
+            mockListDocuments.mockResolvedValueOnce({
+                documents: [{ userId: "user-1", serverId: "server-1" }],
+            });
+
+            // Existing assignment check: none found initially
+            mockListDocuments.mockResolvedValueOnce({
+                documents: [],
+            });
+
+            // createDocument conflicts with a concurrent request
+            mockCreateDocument.mockRejectedValue(
+                Object.assign(new Error("already exists"), { code: 409 }),
+            );
+
+            // Re-read finds the raced assignment
+            mockListDocuments.mockResolvedValueOnce({
+                documents: [
+                    {
+                        $id: "assignment-1",
+                        userId: "user-1",
+                        serverId: "server-1",
+                        roleIds: ["role-2"],
+                    },
+                ],
+            });
+
+            // Role member count query after the update
+            mockListDocuments.mockResolvedValueOnce({
+                documents: [],
+            });
+
+            mockUpdateDocument.mockResolvedValue({
+                $id: "assignment-1",
+                userId: "user-1",
+                serverId: "server-1",
+                roleIds: ["role-2", "role-1"],
+            });
+
+            const request = new NextRequest(
+                "http://localhost/api/role-assignments",
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        userId: "user-1",
+                        serverId: "server-1",
+                        roleId: "role-1",
+                    }),
+                },
+            );
+
+            const response = await POST(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(201);
+            expect(mockUpdateDocument).toHaveBeenCalled();
+            expect(data.assignment.roleIds).toEqual(["role-2", "role-1"]);
+        });
     });
 
     describe("DELETE /api/role-assignments", () => {
@@ -452,6 +587,26 @@ describe("Role Assignments API", () => {
 
             expect(response.status).toBe(400);
             expect(data.error).toContain("required");
+        });
+
+        it("should return 400 if the role belongs to another server", async () => {
+            mockGetDocument.mockResolvedValue({
+                $id: "role-9",
+                serverId: "server-9",
+            });
+
+            const url = new URL("http://localhost/api/role-assignments");
+            url.searchParams.set("userId", "user-1");
+            url.searchParams.set("serverId", "server-1");
+            url.searchParams.set("roleId", "role-9");
+
+            const request = new NextRequest(url, { method: "DELETE" });
+            const response = await DELETE(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(400);
+            expect(data.error).toContain("does not belong to this server");
+            expect(mockDeleteDocument).not.toHaveBeenCalled();
         });
     });
 });

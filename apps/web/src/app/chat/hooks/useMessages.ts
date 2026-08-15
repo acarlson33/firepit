@@ -377,7 +377,7 @@ export function useMessages({
                     const activeChannelId = currentChannelIdRef.current;
                     // Enrich message with profile data before adding to state
                     const profileEnriched =
-                        await enrichMessageWithProfile(base);
+                        await enrichMessageWithProfile(base, userId);
                     if (currentChannelIdRef.current !== activeChannelId) {
                         return;
                     }
@@ -416,7 +416,7 @@ export function useMessages({
                     const activeChannelId = currentChannelIdRef.current;
                     // Enrich message with profile data before updating state
                     const profileEnriched =
-                        await enrichMessageWithProfile(base);
+                        await enrichMessageWithProfile(base, userId);
                     if (currentChannelIdRef.current !== activeChannelId) {
                         return;
                     }
@@ -1321,7 +1321,7 @@ export function useMessages({
 
                 // Enrich message with profile data and reply context
                 const profileEnriched =
-                    await enrichMessageWithProfile(baseMessage);
+                    await enrichMessageWithProfile(baseMessage, userId);
                 if (!profileEnriched) {
                     return;
                 }

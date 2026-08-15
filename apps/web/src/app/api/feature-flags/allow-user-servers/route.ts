@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { getFeatureFlag, FEATURE_FLAGS } from "@/lib/feature-flags";
-import { logger,
-    returnUnauthorized,
-    returnForbidden,
-} from "@/lib/newrelic-utils";
+import { logger } from "@/lib/newrelic-utils";
 
 export async function GET() {
     try {

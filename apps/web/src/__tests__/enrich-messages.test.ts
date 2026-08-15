@@ -35,6 +35,7 @@ beforeEach(() => {
                         userId: "user1",
                         displayName: "Alice",
                         pronouns: "she/her",
+                        avatarFileId: "avatar1",
                         avatarUrl:
                             "http://localhost/storage/buckets/avatars/files/avatar1/view?project=test-project",
                     };
@@ -42,6 +43,7 @@ beforeEach(() => {
                     profiles.user2 = {
                         userId: "user2",
                         displayName: "Bob",
+                        avatarFileId: "avatar2",
                         avatarUrl:
                             "http://localhost/storage/buckets/avatars/files/avatar2/view?project=test-project",
                     };
@@ -316,6 +318,7 @@ describe("Message Enrichment", () => {
 
             expect(enriched.displayName).toBe("Alice");
             expect(enriched.pronouns).toBe("she/her");
+            expect(enriched.avatarFileId).toBe("avatar1");
             expect(enriched.avatarUrl).toContain("avatar1");
         });
 
@@ -391,6 +394,54 @@ describe("Message Enrichment", () => {
     });
 
     describe("Error Handling", () => {
+        it("should fail closed when the batch endpoint errors", async () => {
+            mockFetch.mockImplementationOnce(async () => {
+                return {
+                    ok: false,
+                    json: async () => ({ error: "boom" }),
+                } as Response;
+            });
+
+            const { enrichMessagesWithProfiles } =
+                await import("../lib/enrich-messages");
+
+            const messages: Message[] = [
+                {
+                    $id: "msg1",
+                    userId: "user1",
+                    text: "Hello",
+                    $createdAt: new Date().toISOString(),
+                },
+            ];
+
+            const enriched = await enrichMessagesWithProfiles(messages);
+
+            expect(enriched).toEqual([]);
+        });
+
+        it("should fail closed for single enrichment when the batch endpoint errors", async () => {
+            mockFetch.mockImplementationOnce(async () => {
+                return {
+                    ok: false,
+                    json: async () => ({ error: "boom" }),
+                } as Response;
+            });
+
+            const { enrichMessageWithProfile } =
+                await import("../lib/enrich-messages");
+
+            const message: Message = {
+                $id: "msg1",
+                userId: "user1",
+                text: "Hello",
+                $createdAt: new Date().toISOString(),
+            };
+
+            const enriched = await enrichMessageWithProfile(message);
+
+            expect(enriched).toBeNull();
+        });
+
         it("should return original messages if enrichment fails for batch", async () => {
             const { enrichMessagesWithProfiles } =
                 await import("../lib/enrich-messages");

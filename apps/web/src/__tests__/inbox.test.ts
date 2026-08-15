@@ -62,7 +62,21 @@ vi.mock("@/lib/appwrite-friendships", () => ({
 }));
 
 vi.mock("@/lib/thread-read-store", () => ({
+    CONCURRENT_DOCUMENT_QUERIES: 4,
     listThreadReadsByContext: vi.fn(async () => new Map()),
+    runInBatches: async <T>(params: {
+        batchSize: number;
+        items: T[];
+        worker: (item: T) => Promise<void>;
+    }) => {
+        for (let index = 0; index < params.items.length; index += params.batchSize) {
+            await Promise.all(
+                params.items
+                    .slice(index, index + params.batchSize)
+                    .map((item) => params.worker(item)),
+            );
+        }
+    },
 }));
 
 vi.mock("@/lib/thread-read-states", () => ({

@@ -44,7 +44,10 @@ describe("useNotificationSettings", () => {
         });
 
         expect(result.current.settings?.$id).toBe("settings-1");
-        expect(global.fetch).toHaveBeenCalledWith("/api/notifications/settings");
+        expect(global.fetch).toHaveBeenCalledWith(
+            "/api/notifications/settings",
+            expect.objectContaining({ signal: expect.any(AbortSignal) }),
+        );
     });
 
     it("updates settings through PATCH", async () => {

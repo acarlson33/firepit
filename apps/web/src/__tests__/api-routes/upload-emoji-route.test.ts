@@ -65,7 +65,7 @@ describe("upload-emoji route", () => {
     const data = await response.json();
 
     expect(response.status).toBe(401);
-    expect(data.error).toBe("Unauthorized");
+    expect(data.error).toBe("Authentication required");
   });
 
   it("requires a file", async () => {

@@ -2,6 +2,7 @@ import { AppwriteException, Query } from "node-appwrite";
 
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
+import { logger } from "./newrelic-utils";
 import type { FileAttachment } from "./types";
 
 /**
@@ -79,7 +80,12 @@ export async function listAllServersPage(
             items,
             nextCursor: items.length === limit && last ? last.$id : null,
         };
-    } catch {
+    } catch (error) {
+        logger.error("Failed to list servers page", {
+            limit,
+            cursor,
+            error: error instanceof Error ? error.message : String(error),
+        });
         return { items: [], nextCursor: null };
     }
 }
@@ -127,7 +133,13 @@ export async function listAllChannelsPage(
             items,
             nextCursor: items.length === limit && last ? last.$id : null,
         };
-    } catch {
+    } catch (error) {
+        logger.error("Failed to list channels page", {
+            serverId,
+            limit,
+            cursor,
+            error: error instanceof Error ? error.message : String(error),
+        });
         return { items: [], nextCursor: null };
     }
 }
@@ -187,7 +199,11 @@ export async function listGlobalMessages(
             nextCursor:
                 items.length === filters.limit && last ? last.$id : null,
         };
-    } catch {
+    } catch (error) {
+        logger.error("Failed to list global messages", {
+            filters,
+            error: error instanceof Error ? error.message : String(error),
+        });
         return { items: [], nextCursor: null };
     }
 }
@@ -419,12 +435,11 @@ export function buildMessageQueries(opts: MessageQueryOpts, limit: number) {
     if (opts.userId) {
         queries.push(Query.equal("userId", opts.userId));
     }
-    if (opts.channelId) {
-        queries.push(Query.equal("channelId", opts.channelId));
-    }
-    if (opts.channelIds?.length) {
-        // multi-channel filter - use Query.equal with array for OR condition
-        queries.push(Query.equal("channelId", opts.channelIds));
+    const channelIdFilter = opts.channelIds?.length
+        ? opts.channelIds
+        : opts.channelId;
+    if (channelIdFilter) {
+        queries.push(Query.equal("channelId", channelIdFilter));
     }
     if (opts.serverId) {
         queries.push(Query.equal("serverId", opts.serverId));

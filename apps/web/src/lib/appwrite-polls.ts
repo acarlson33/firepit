@@ -1,13 +1,18 @@
 import { Query } from "appwrite";
 
 import { logger } from "@/lib/client-logger";
-import { listPages } from "@/lib/appwrite-pagination";
+import {
+    chunkValues,
+    listPages,
+    mapWithConcurrency,
+} from "@/lib/appwrite-pagination";
 import { getBrowserDatabases, getEnvConfig } from "@/lib/appwrite-core";
 import {
     buildMessagePoll,
     normalizePollDocument,
     normalizePollVoteDocument,
     type PollDocShape,
+    type PollVoteDocShape,
 } from "@/lib/polls";
 import type { Message } from "@/lib/types";
 
@@ -15,13 +20,6 @@ const POLLS_PAGE_LIMIT = 100;
 const POLL_VOTES_PAGE_LIMIT = 1000;
 const MAX_POLL_PAGES = 50;
 const QUERY_ARRAY_LIMIT = 100;
-
-type PollVoteDocShape = {
-    $id: string;
-    pollId: string;
-    userId: string;
-    optionId: string;
-};
 
 async function listPollDocumentsForMessages(params: {
     messageIds: string[];
@@ -34,13 +32,10 @@ async function listPollDocumentsForMessages(params: {
     }
     const databases = getBrowserDatabases();
 
-    const messageIdChunks: string[][] = [];
-    for (let index = 0; index < messageIds.length; index += QUERY_ARRAY_LIMIT) {
-        messageIdChunks.push(messageIds.slice(index, index + QUERY_ARRAY_LIMIT));
-    }
-
-    const pages = await Promise.all(
-        messageIdChunks.map((messageIdChunk) =>
+    const pages = await mapWithConcurrency({
+        items: chunkValues(messageIds, QUERY_ARRAY_LIMIT),
+        concurrency: 4,
+        mapper: (messageIdChunk) =>
             listPages({
                 databases,
                 databaseId,
@@ -53,8 +48,7 @@ async function listPollDocumentsForMessages(params: {
                 maxPages: MAX_POLL_PAGES,
                 warningContext: "listPollDocumentsForMessages",
             }),
-        ),
-    );
+    });
 
     const documents = pages.flatMap((page) => page.documents);
     const truncated = pages.some((page) => page.truncated);
@@ -84,13 +78,10 @@ async function listVoteDocumentsForPolls(params: {
     }
     const databases = getBrowserDatabases();
 
-    const pollIdChunks: string[][] = [];
-    for (let index = 0; index < pollIds.length; index += QUERY_ARRAY_LIMIT) {
-        pollIdChunks.push(pollIds.slice(index, index + QUERY_ARRAY_LIMIT));
-    }
-
-    const pages = await Promise.all(
-        pollIdChunks.map((pollIdChunk) =>
+    const pages = await mapWithConcurrency({
+        items: chunkValues(pollIds, QUERY_ARRAY_LIMIT),
+        concurrency: 4,
+        mapper: (pollIdChunk) =>
             listPages({
                 databases,
                 databaseId,
@@ -103,8 +94,7 @@ async function listVoteDocumentsForPolls(params: {
                 maxPages: MAX_POLL_PAGES,
                 warningContext: "listVoteDocumentsForPolls",
             }),
-        ),
-    );
+    });
 
     const documents = pages.flatMap((page) => page.documents);
     const truncated = pages.some((page) => page.truncated);
@@ -129,9 +119,13 @@ export async function enrichMessagesWithPolls(messages: Message[]): Promise<Mess
     }
 
     const messageIds = messages.map((message) => message.$id);
-    const env = getEnvConfig();
 
     try {
+        const env = getEnvConfig();
+        if (!env.collections.polls || !env.collections.pollVotes) {
+            return messages;
+        }
+
         const pollDocuments = await listPollDocumentsForMessages({
             messageIds,
             databaseId: env.databaseId,
@@ -177,10 +171,10 @@ export async function enrichMessagesWithPolls(messages: Message[]): Promise<Mess
             );
         }
 
-        return messages.map((message) => ({
-            ...message,
-            poll: pollsByMessageId.get(message.$id),
-        }));
+        return messages.map((message) => {
+            const poll = pollsByMessageId.get(message.$id);
+            return poll ? { ...message, poll } : message;
+        });
     } catch (error) {
         logger.error("Failed to enrich messages with poll data", undefined, {
             messageCount: messages.length,

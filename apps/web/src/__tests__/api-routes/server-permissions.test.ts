@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const {
+    mockGetServerSession,
     mockGetServerPermissionsForUser,
     mockGetChannelAccessForUser,
     mockGetDocument,
@@ -9,12 +10,17 @@ const {
     mockNormalizeChannelType,
     mockListDocuments,
 } = vi.hoisted(() => ({
+    mockGetServerSession: vi.fn(),
     mockGetServerPermissionsForUser: vi.fn(),
     mockGetChannelAccessForUser: vi.fn(),
     mockGetDocument: vi.fn(),
     mockHasAccessToCategory: vi.fn(),
     mockNormalizeChannelType: vi.fn(),
     mockListDocuments: vi.fn(),
+}));
+
+vi.mock("@/lib/auth-server", () => ({
+    getServerSession: mockGetServerSession,
 }));
 
 vi.mock("@/lib/appwrite-server", () => ({
@@ -55,12 +61,30 @@ let GET: typeof import("@/app/api/servers/[serverId]/permissions/route").GET;
 
 beforeEach(async () => {
     vi.clearAllMocks();
+    mockGetServerSession.mockResolvedValue({ $id: "user-1", name: "User One" });
     const mod = await import("@/app/api/servers/[serverId]/permissions/route");
     GET = mod.GET;
 });
 
 describe("GET /api/servers/[serverId]/permissions", () => {
-    it("returns 400 when userId is missing", async () => {
+    it("defaults to the caller when userId is missing", async () => {
+        mockGetServerPermissionsForUser.mockResolvedValue({
+            isServerOwner: false,
+            isMember: true,
+            permissions: {
+                readMessages: true,
+                sendMessages: true,
+                manageMessages: false,
+                manageChannels: false,
+                manageRoles: false,
+                manageServer: false,
+                mentionEveryone: false,
+                administrator: false,
+            },
+            roleIds: ["role-1"],
+            roles: [],
+        });
+
         const request = new NextRequest(
             "http://localhost:3000/api/servers/server-1/permissions",
         );
@@ -69,10 +93,48 @@ describe("GET /api/servers/[serverId]/permissions", () => {
             params: Promise.resolve({ serverId: "server-1" }),
         });
 
-        expect(response.status).toBe(400);
-        await expect(response.json()).resolves.toEqual({
-            error: "userId is required",
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+            readMessages: true,
+            sendMessages: true,
+            canRead: true,
+            canSend: true,
         });
+        expect(mockGetServerPermissionsForUser).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            "server-1",
+            "user-1",
+        );
+    });
+
+    it("forbids querying another user without manageRoles", async () => {
+        mockGetServerPermissionsForUser.mockResolvedValueOnce({
+            isServerOwner: false,
+            isMember: true,
+            permissions: {
+                readMessages: true,
+                sendMessages: true,
+                manageMessages: false,
+                manageChannels: false,
+                manageRoles: false,
+                manageServer: false,
+                mentionEveryone: false,
+                administrator: false,
+            },
+            roleIds: ["role-1"],
+            roles: [],
+        });
+
+        const request = new NextRequest(
+            "http://localhost:3000/api/servers/server-1/permissions?userId=other-user",
+        );
+
+        const response = await GET(request, {
+            params: Promise.resolve({ serverId: "server-1" }),
+        });
+
+        expect(response.status).toBe(403);
     });
 
     it("returns base server permissions when no channelId is provided", async () => {

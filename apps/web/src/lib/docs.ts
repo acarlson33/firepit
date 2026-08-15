@@ -3,6 +3,7 @@ import "server-only";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { cacheLife } from "next/cache";
 import { parse } from "yaml";
 
 const DOCS_DIR = join(process.cwd(), "docs");
@@ -556,17 +557,25 @@ function getSchemaVariants(schema: OpenApiSchema | undefined): string[] {
     return [];
 }
 
+const MAX_SCHEMA_DEPTH = 10;
+
 /**
  * Returns schema fields.
  *
  * @param {OpenApiSchema | undefined} schema - The schema value.
  * @param {{ [x: string]: OpenApiSchema; }} schemas - The schemas value.
+ * @param {number} depth - Current recursion depth.
  * @returns {ApiSchemaField[]} The return value.
  */
 function getSchemaFields(
     schema: OpenApiSchema | undefined,
     schemas: Record<string, OpenApiSchema>,
+    depth = 0,
 ): ApiSchemaField[] {
+    if (depth > MAX_SCHEMA_DEPTH) {
+        return [];
+    }
+
     const resolvedSchema = resolveSchema(schema, schemas);
 
     if (!resolvedSchema) {
@@ -599,8 +608,9 @@ function getSchemaFields(
                                       ? childSchema
                                       : undefined,
                                   schemas,
+                                  depth + 1,
                               )
-                            : getSchemaFields(childSchema, schemas),
+                            : getSchemaFields(childSchema, schemas, depth + 1),
                 };
             },
         );
@@ -617,7 +627,7 @@ function getSchemaFields(
                 format: resolvedItems?.format || "",
                 defaultValue: formatDefaultValue(resolvedItems?.default),
                 enumValues: resolvedItems?.enum || [],
-                children: getSchemaFields(resolvedItems, schemas),
+                children: getSchemaFields(resolvedItems, schemas, depth + 1),
             },
         ];
     }
@@ -753,6 +763,8 @@ function getOperationAnchorId(method: string, path: string) {
  * @returns {Promise<DocsPage | null>} The return value.
  */
 export async function getDocPage(slug: string): Promise<DocsPage | null> {
+    "use cache";
+    cacheLife("days");
     const page = docsPageMap.get(slug);
     if (!page) {
         return null;
@@ -773,6 +785,8 @@ export async function getDocPage(slug: string): Promise<DocsPage | null> {
  * @returns {Promise<ApiReferenceData>} The return value.
  */
 export async function getApiReferenceData(): Promise<ApiReferenceData> {
+    "use cache";
+    cacheLife("days");
     const raw = await readFile(OPENAPI_FILE, "utf8");
     const parsed = parse(raw) as OpenApiSpec;
     const pathEntries = Object.entries(parsed.paths || {});

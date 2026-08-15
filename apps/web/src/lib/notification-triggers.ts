@@ -5,6 +5,7 @@
  * notifications to users based on their settings and the context of the event.
  */
 
+import { MENTION_PATTERN } from "@/lib/mention-utils";
 import type {
 	NotificationLevel,
 	NotificationPayload,
@@ -48,11 +49,12 @@ interface NotificationResult {
 }
 
 const NOTIFICATION_SETTINGS_CACHE_TTL_MS = 15_000;
+const NOTIFICATION_SETTINGS_NEGATIVE_CACHE_TTL_MS = 3_000;
 const QUIET_HOURS_TIME_PATTERN = /^\d{1,2}:\d{2}$/;
 
 type NotificationSettingsCacheEntry = {
 	expiresAt: number;
-	settings: NotificationSettings;
+	settings: NotificationSettings | null;
 };
 
 const notificationSettingsCache = new Map<string, NotificationSettingsCacheEntry>();
@@ -277,12 +279,22 @@ async function getOrCreateNotificationSettings(
 			});
 
 			if (!response.ok) {
+				notificationSettingsCache.set(recipientId, {
+					expiresAt:
+						Date.now() + NOTIFICATION_SETTINGS_NEGATIVE_CACHE_TTL_MS,
+					settings: null,
+				});
 				return null;
 			}
 
 			const payload = (await response.json()) as unknown;
 			const settings = normalizeNotificationSettings(payload, recipientId);
 			if (!settings) {
+				notificationSettingsCache.set(recipientId, {
+					expiresAt:
+						Date.now() + NOTIFICATION_SETTINGS_NEGATIVE_CACHE_TTL_MS,
+					settings: null,
+				});
 				return null;
 			}
 
@@ -529,16 +541,10 @@ export function buildNotificationPayload(
  * @returns {string[]} The return value.
  */
 export function extractMentionedUserIds(messageContent: string): string[] {
-	// Match patterns like @<userId> or <@userId>
-	const mentionPattern = /<@([a-zA-Z0-9]+)>/g;
-	const mentions: string[] = [];
-	let match;
-
-	while ((match = mentionPattern.exec(messageContent)) !== null) {
-		mentions.push(match[1]);
-	}
-
-	return mentions;
+	return Array.from(
+		messageContent.matchAll(MENTION_PATTERN),
+		(match) => match[1],
+	);
 }
 
 /**

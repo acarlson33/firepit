@@ -6,9 +6,11 @@ import Expo from "expo-server-sdk";
 import { getServerSession } from "@/lib/auth-server";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { returnUnauthorized } from "@/lib/newrelic-utils";
-
-const PUSH_TOKENS_COLLECTION = "push_tokens";
+import {
+    logger,
+    returnForbidden,
+    returnUnauthorized,
+} from "@/lib/newrelic-utils";
 
 type PushPayload = {
   userId: string;
@@ -19,8 +21,8 @@ type PushPayload = {
 
 /**
  * POST /api/notifications/push
- * Send a push notification to a user by looking up their stored Expo push tokens
- * and dispatching via the Expo Push SDK.
+ * Send a push notification to the authenticated user by looking up their
+ * stored Expo push tokens and dispatching via the Expo Push SDK.
  */
 export async function POST(request: NextRequest) {
     try {
@@ -39,17 +41,28 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        if (userId !== session.$id) {
+            return returnForbidden();
+        }
+
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
         // Look up push tokens for the target user
         const tokensResult = await databases.listDocuments(
             env.databaseId,
-            PUSH_TOKENS_COLLECTION,
+            env.collections.pushTokens,
             [Query.equal("userId", userId)],
         );
 
-        const tokens = tokensResult.documents.map(
+        const tokenDocuments = tokensResult.documents;
+        const tokenById = new Map(
+            tokenDocuments
+                .filter((doc) => typeof doc.token === "string")
+                .map((doc) => [doc.token as string, doc.$id]),
+        );
+
+        const tokens = tokenDocuments.map(
             (doc) => doc.token as string,
         );
 
@@ -91,9 +104,27 @@ export async function POST(request: NextRequest) {
                 const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
                 for (let i = 0; i < ticketChunk.length; i++) {
                     const ticket = ticketChunk[i];
+                    const token = (chunk[i] as { to: string }).to;
+                    const isDeviceNotRegistered =
+                        ticket.status === "error" &&
+                        ticket.details?.error === "DeviceNotRegistered";
+
+                    if (isDeviceNotRegistered) {
+                        const documentId = tokenById.get(token);
+                        if (documentId) {
+                            await databases
+                                .deleteDocument(
+                                    env.databaseId,
+                                    env.collections.pushTokens,
+                                    documentId,
+                                )
+                                .catch(() => undefined);
+                        }
+                    }
+
                     results.push({
                         status: ticket.status,
-                        token: expoPushTokens[i].slice(0, 20) + "...",
+                        token: token.slice(0, 20) + "...",
                         error:
                             ticket.status === "error"
                                 ? ticket.details?.error
@@ -101,10 +132,10 @@ export async function POST(request: NextRequest) {
                     });
                 }
             } catch (error) {
-                for (const token of chunk) {
+                for (const tokenMessage of chunk) {
                     results.push({
                         status: "error",
-                        token: (token as unknown as { to: string }).to.slice(0, 20) + "...",
+                        token: (tokenMessage as unknown as { to: string }).to.slice(0, 20) + "...",
                         error: error instanceof Error ? error.message : String(error),
                     });
                 }
@@ -117,7 +148,9 @@ export async function POST(request: NextRequest) {
             results,
         });
     } catch (error) {
-        console.error("[push] Dispatch failed:", error);
+        logger.error("[push] Dispatch failed", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to send push notification" },
             { status: 500 },

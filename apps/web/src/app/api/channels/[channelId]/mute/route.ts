@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 
+import { getServerClient } from "@/lib/appwrite-server";
+import { getEnvConfig } from "@/lib/appwrite-core";
+import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { getServerSession } from "@/lib/auth-server";
 import { muteChannel, unmuteChannel } from "@/lib/notification-settings";
 import { invalidateNotificationSettingsCache } from "@/lib/notification-triggers";
-import { returnUnauthorized, returnForbidden } from "@/lib/newrelic-utils";
+import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import { returnUnauthorized, returnForbidden, logger } from "@/lib/newrelic-utils";
 import type { MuteDuration, NotificationLevel } from "@/lib/types";
 
 interface MuteRequestBody {
@@ -38,7 +42,45 @@ export async function POST(
 			);
 		}
 
-		const body = (await request.json()) as MuteRequestBody;
+		const env = getEnvConfig();
+		const { databases } = getServerClient();
+
+		let channel;
+		try {
+			channel = await databases.getDocument(
+				env.databaseId,
+				env.collections.channels,
+				channelId,
+			);
+		} catch (error) {
+			if (isDocumentNotFoundError(error)) {
+				return NextResponse.json(
+					{ error: "Channel not found" },
+					{ status: 404 },
+				);
+			}
+			throw error;
+		}
+
+		const serverAccess = await getServerPermissionsForUser(
+			databases,
+			env,
+			String(channel.serverId),
+			user.$id,
+		);
+		if (!serverAccess.isMember) {
+			return returnForbidden();
+		}
+
+		let body: MuteRequestBody;
+		try {
+			body = (await request.json()) as MuteRequestBody;
+		} catch {
+			return NextResponse.json(
+				{ error: "Invalid JSON" },
+				{ status: 400 }
+			);
+		}
 
 		if (typeof body.muted !== "boolean") {
 			return NextResponse.json(
@@ -76,21 +118,24 @@ export async function POST(
 
 		// Get the channel override from the updated settings
 		const channelOverride = updatedSettings.channelOverrides?.[channelId];
+		const mutedUntil = channelOverride?.mutedUntil;
+		const muted =
+			mutedUntil === "forever" ||
+			(typeof mutedUntil === "string" &&
+				new Date(mutedUntil).getTime() > Date.now());
 
 		return NextResponse.json({
 			channelId,
-			muted: !!channelOverride,
-			mutedUntil: channelOverride?.mutedUntil,
+			muted,
+			mutedUntil,
 			level: channelOverride?.level,
 		});
 	} catch (error) {
+		logger.error("Failed to update channel mute settings", {
+			error: error instanceof Error ? error.message : String(error),
+		});
 		return NextResponse.json(
-			{
-				error:
-					error instanceof Error
-						? error.message
-						: "Failed to update channel mute settings",
-			},
+			{ error: "Failed to update channel mute settings" },
 			{ status: 500 }
 		);
 	}

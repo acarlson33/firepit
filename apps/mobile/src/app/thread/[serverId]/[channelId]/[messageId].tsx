@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
     ActivityIndicator,
     Pressable,
@@ -121,6 +122,8 @@ export default function ThreadScreen() {
     useEffect(() => {
         void loadThread();
     }, [loadThread]);
+
+    useRetryOnReconnect(loadState === "error", loadThread);
 
     const sendReply = useCallback(async () => {
         if (

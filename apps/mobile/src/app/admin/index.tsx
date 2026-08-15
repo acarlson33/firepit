@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
+import { useRetryOnReconnect } from "@/hooks/use-retry-on-reconnect";
 import {
     ActivityIndicator,
     ScrollView,
@@ -67,6 +68,8 @@ export default function AdminDashboardScreen() {
     useEffect(() => {
         void loadStats();
     }, [loadStats]);
+
+    useRetryOnReconnect(loadState === "error", loadStats);
 
     return (
         <AuthRouteGuard>

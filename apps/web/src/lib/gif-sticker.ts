@@ -226,7 +226,7 @@ export function mapGiphyResults(params: {
     items: GifSearchItem[];
     next?: string;
 } {
-    const { payload, requestedLimit, requestedCursor } = params;
+    const { payload, requestedCursor } = params;
     const items: GifSearchItem[] = [];
     const rawItems = Array.isArray(payload.data) ? payload.data : [];
 
@@ -266,12 +266,15 @@ export function mapGiphyResults(params: {
 
     const pagination = payload.pagination;
     const total = Number(pagination?.total_count);
-    const count = Number(pagination?.count ?? requestedLimit);
-    const nextOffset = parseCursorOffset(requestedCursor) +
-        (Number.isFinite(count) ? Math.max(0, Math.floor(count)) : requestedLimit);
+    const nextOffset =
+        items.length > 0
+            ? parseCursorOffset(requestedCursor) + items.length
+            : null;
 
     const next =
-        Number.isFinite(total) && total > nextOffset ? String(nextOffset) : undefined;
+        nextOffset !== null && Number.isFinite(total) && total > nextOffset
+            ? String(nextOffset)
+            : undefined;
 
     return {
         items,

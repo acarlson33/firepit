@@ -3,6 +3,10 @@ import { NextRequest } from "next/server";
 import { GET, POST, PATCH, DELETE } from "../../app/api/status/route";
 import { STATUS_STALE_THRESHOLD_MS } from "@/lib/status-normalization";
 
+const { mockSession } = vi.hoisted(() => ({
+    mockSession: vi.fn(),
+}));
+
 // Mock node-appwrite for server-side
 vi.mock("node-appwrite", () => ({
     ID: { unique: () => "mock-id" },
@@ -10,6 +14,10 @@ vi.mock("node-appwrite", () => ({
         equal: (field: string, value: string) => `equal(${field},${value})`,
         limit: (n: number) => `limit(${n})`,
     },
+}));
+
+vi.mock("@/lib/auth-server", () => ({
+    getServerSession: mockSession,
 }));
 
 // Create mock databases object
@@ -43,6 +51,7 @@ vi.mock("@/lib/appwrite-core", () => ({
 describe("Status API Routes", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockSession.mockResolvedValue({ $id: "user-1" });
     });
 
     describe("POST /api/status", () => {

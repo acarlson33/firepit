@@ -1,8 +1,14 @@
-import { ID, Query, Permission, Role } from "node-appwrite";
+import { ID, Permission, Query, Role } from "appwrite";
 
 import type { Conversation, DirectMessage, FileAttachment } from "./types";
-import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
-import { listPages } from "./appwrite-pagination";
+import {
+    ForbiddenError,
+    getBrowserDatabases,
+    getEnvConfig,
+    normalizeError,
+    UnauthorizedError,
+} from "./appwrite-core";
+import { chunkValues, listPages, mapWithConcurrency } from "./appwrite-pagination";
 import { parseReactionsWithMetadata, type Reaction } from "./reactions-utils";
 import { normalizeFileAttachment } from "./file-attachments";
 import { logger } from "./client-logger";
@@ -12,6 +18,7 @@ const DATABASE_ID = env.databaseId;
 const CONVERSATIONS_COLLECTION = env.collections.conversations;
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
+const MAX_MIGRATED_REACTION_DOCUMENTS = 500;
 const migratedReactionDocuments = new Set<string>();
 
 const ATTACHMENT_SELECT_FIELDS = [
@@ -34,13 +41,7 @@ const ATTACHMENT_SELECT_FIELDS = [
 const MAX_ATTACHMENTS_PER_MESSAGE = 10;
 
 function selectQuery(fields: readonly string[]) {
-    const queryWithSelect = Query as typeof Query & {
-        select?: (selectedFields: string[]) => string;
-    };
-
-    return typeof queryWithSelect.select === "function"
-        ? [queryWithSelect.select([...fields])]
-        : [];
+    return [Query.select([...fields])];
 }
 
 function isConflictError(error: unknown): boolean {
@@ -58,6 +59,14 @@ function isConflictError(error: unknown): boolean {
         : false;
 }
 
+function isDocumentNotFoundError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    return (error as { type?: unknown }).type === "document_not_found";
+}
+
 /**
  * Create a deterministic direct-message conversation document ID for two users.
  * Inputs are canonicalized by sorting and encoded as a JSON array before hashing
@@ -67,7 +76,7 @@ async function createDirectConversationDocumentId(
     user1: string,
     user2: string,
 ): Promise<string> {
-    const canonicalUserIds = [user1, user2].sort((a, b) => a.localeCompare(b));
+    const canonicalUserIds = [user1, user2].sort();
     const input = JSON.stringify(canonicalUserIds);
     const inputBytes = new TextEncoder().encode(input);
     const digestBuffer = await crypto.subtle.digest("SHA-256", inputBytes);
@@ -163,40 +172,6 @@ function getDatabases() {
     return getBrowserDatabases();
 }
 
-function chunkArray<T>(items: T[], size: number): T[][] {
-    const chunks: T[][] = [];
-    for (let index = 0; index < items.length; index += size) {
-        chunks.push(items.slice(index, index + size));
-    }
-    return chunks;
-}
-
-async function mapWithConcurrency<T, R>(params: {
-    items: T[];
-    concurrency: number;
-    mapper: (item: T) => Promise<R>;
-}): Promise<R[]> {
-    const { items, concurrency, mapper } = params;
-    if (items.length === 0) {
-        return [];
-    }
-
-    const workerCount = Math.min(Math.max(1, concurrency), items.length);
-    const results = new Array<R>(items.length);
-    let nextIndex = 0;
-
-    const workers = Array.from({ length: workerCount }, async () => {
-        while (nextIndex < items.length) {
-            const currentIndex = nextIndex;
-            nextIndex += 1;
-            results[currentIndex] = await mapper(items[currentIndex]);
-        }
-    });
-
-    await Promise.all(workers);
-    return results;
-}
-
 /**
  * Normalizes and persists legacy reaction payloads when needed.
  * Accepts the same input formats supported by parseReactionsWithMetadata:
@@ -226,6 +201,10 @@ function scheduleReactionMigration(
         return;
     }
 
+    if (migratedReactionDocuments.size >= MAX_MIGRATED_REACTION_DOCUMENTS) {
+        return;
+    }
+
     migratedReactionDocuments.add(key);
     void getDatabases()
         .updateDocument({
@@ -236,7 +215,16 @@ function scheduleReactionMigration(
                 reactions: JSON.stringify(parsed.reactions),
             },
         })
-        .catch(() => {
+        .catch((error) => {
+            const normalized = normalizeError(error);
+            // Preserve the key for permission failures so unauthorized writes
+            // are not retried on every message load; only transient errors retry.
+            if (
+                normalized instanceof UnauthorizedError ||
+                normalized instanceof ForbiddenError
+            ) {
+                return;
+            }
             migratedReactionDocuments.delete(key);
         });
 }
@@ -262,14 +250,17 @@ async function enrichDirectMessagesWithAttachments(
         // Get all message IDs
         const messageIds = messages.map((m) => m.$id);
 
-        const pageSize = Math.min(
-            1000,
-            Math.max(50, messageIds.length * MAX_ATTACHMENTS_PER_MESSAGE),
-        );
         const pagedAttachmentDocuments = await mapWithConcurrency({
-            items: chunkArray(messageIds, 100),
+            items: chunkValues(messageIds, 100),
             concurrency: 4,
             mapper: async (messageIdChunk) => {
+                const pageSize = Math.min(
+                    1000,
+                    Math.max(
+                        50,
+                        messageIdChunk.length * MAX_ATTACHMENTS_PER_MESSAGE,
+                    ),
+                );
                 const page = await listPages({
                     databases: getDatabases(),
                     databaseId: DATABASE_ID,
@@ -447,7 +438,10 @@ export async function getOrCreateConversation(
                 $createdAt: String(existingByIdRecord.$createdAt),
             };
         }
-    } catch {
+    } catch (error) {
+        if (!isDocumentNotFoundError(error)) {
+            throw error;
+        }
         // Fall back to legacy paginated contains lookup for older records.
     }
 
@@ -489,8 +483,11 @@ export async function getOrCreateConversation(
                 $createdAt: String(oneToOne.$createdAt),
             };
         }
-    } catch {
-        // Continue to create new conversation if not found
+    } catch (error) {
+        logger.warn(
+            "Existing conversation lookup failed, continuing to create new conversation",
+            { user1, user2, error: error instanceof Error ? error.message : String(error) },
+        );
     }
 
     // Create new conversation
@@ -665,32 +662,59 @@ export async function listConversations(
             };
         });
 
-        // Enrich with other user's profile data (batch fetch via API route)
-        const otherUserIds = conversations
-            .map((conv) => conv.participants.find((id) => id !== userId))
-            .filter((id): id is string => Boolean(id));
-        const profileMap = await fetchProfilesBatch(otherUserIds);
+        // Enrich with other participants' profile data (batch fetch via API route)
+        const otherParticipantIds = [
+            ...new Set(
+                conversations.flatMap((conv) =>
+                    (conv.participants || []).filter((id) => id !== userId),
+                ),
+            ),
+        ];
+        const profileMap = await fetchProfilesBatch(otherParticipantIds);
 
         const enriched = conversations.map((conv) => {
-            const otherUserId = conv.participants.find((id) => id !== userId);
-            if (!otherUserId) {
-                return conv;
+            const isGroup =
+                conv.isGroup || (conv.participants || []).length > 2;
+            const participantProfiles = (conv.participants || [])
+                .filter((id) => id !== userId)
+                .map((id) => {
+                    const profile = profileMap.get(id);
+                    return {
+                        userId: id,
+                        displayName: profile?.displayName,
+                        avatarUrl: profile?.avatarUrl,
+                        avatarFramePreset: profile?.avatarFramePreset,
+                        avatarFrameUrl: profile?.avatarFrameUrl,
+                    };
+                });
+
+            const base: Conversation = { ...conv, isGroup };
+
+            if (isGroup) {
+                return base;
             }
-            const profile = profileMap.get(otherUserId);
+
+            const otherUserProfile = participantProfiles[0];
             return {
-                ...conv,
-                otherUser: {
-                    userId: otherUserId,
-                    displayName: profile?.displayName,
-                    avatarUrl: profile?.avatarUrl,
-                    avatarFramePreset: profile?.avatarFramePreset,
-                    avatarFrameUrl: profile?.avatarFrameUrl,
-                },
+                ...base,
+                otherUser: otherUserProfile
+                    ? {
+                          userId: otherUserProfile.userId,
+                          displayName: otherUserProfile.displayName,
+                          avatarUrl: otherUserProfile.avatarUrl,
+                          avatarFramePreset: otherUserProfile.avatarFramePreset,
+                          avatarFrameUrl: otherUserProfile.avatarFrameUrl,
+                      }
+                    : base.otherUser,
             };
         });
 
         return enriched;
-    } catch {
+    } catch (error) {
+        logger.warn("Failed to list conversations", {
+            error: error instanceof Error ? error.message : String(error),
+            userId,
+        });
         return [];
     }
 }
@@ -894,12 +918,13 @@ export async function listDirectMessages(
         const last = enrichedWithAttachments.at(-1);
         return {
             items: enrichedWithAttachments,
-            nextCursor:
-                enrichedWithAttachments.length === limit && last
-                    ? last.$id
-                    : undefined,
+            nextCursor: last ? last.$id : undefined,
         };
-    } catch {
+    } catch (error) {
+        logger.warn("Failed to list direct messages", {
+            conversationId,
+            error: error instanceof Error ? error.message : String(error),
+        });
         return { items: [] };
     }
 }

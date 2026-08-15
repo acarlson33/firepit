@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiCache } from "@/lib/cache-utils";
-import { readFileSync } from "fs";
-import { join } from "path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const REPO_OWNER = "acarlson33";
 const REPO_NAME = "firepit";
@@ -18,6 +18,46 @@ interface BuildMetadata {
 	branch: string;
 }
 
+const DEFAULT_BUILD_METADATA: BuildMetadata = {
+	version: "1.0.0-dev",
+	commitSha: "unknown",
+	commitShort: "unknown",
+	buildTime: new Date().toISOString(),
+	isCanary: true,
+	latestTag: null,
+	branch: "unknown",
+};
+
+function sanitizeBuildMetadata(raw: unknown): BuildMetadata {
+	const record =
+		raw && typeof raw === "object"
+			? (raw as Record<string, unknown>)
+			: {};
+	const asString = (value: unknown, fallback: string) =>
+		typeof value === "string" && value.length > 0 ? value : fallback;
+
+	return {
+		version: asString(record.version, DEFAULT_BUILD_METADATA.version),
+		commitSha: asString(record.commitSha, DEFAULT_BUILD_METADATA.commitSha),
+		commitShort: asString(
+			record.commitShort,
+			DEFAULT_BUILD_METADATA.commitShort,
+		),
+		buildTime: asString(record.buildTime, DEFAULT_BUILD_METADATA.buildTime),
+		isCanary:
+			typeof record.isCanary === "boolean"
+				? record.isCanary
+				: DEFAULT_BUILD_METADATA.isCanary,
+		latestTag:
+			typeof record.latestTag === "string" && record.latestTag.length > 0
+				? record.latestTag
+				: null,
+		branch: asString(record.branch, DEFAULT_BUILD_METADATA.branch),
+	};
+}
+
+let memoizedBuildMetadata: BuildMetadata | null = null;
+
 /**
  * Load build-time version metadata
  * Falls back to default values if file doesn't exist (e.g., in development)
@@ -26,28 +66,31 @@ function loadBuildMetadata(): BuildMetadata {
 	// Allow tests to inject mock metadata via environment variable
 	if (process.env.MOCK_VERSION_METADATA) {
 		try {
-			return JSON.parse(process.env.MOCK_VERSION_METADATA);
+			return sanitizeBuildMetadata(JSON.parse(process.env.MOCK_VERSION_METADATA));
 		} catch {
 			// If parsing fails, fall through to normal behavior
 		}
 	}
 
+	if (memoizedBuildMetadata) {
+		return memoizedBuildMetadata;
+	}
+
 	try {
-		const metadataPath = join(process.cwd(), "src", "generated", "version-metadata.json");
+		const metadataPath = join(
+			process.cwd(),
+			"src",
+			"generated",
+			"version-metadata.json",
+		);
 		const content = readFileSync(metadataPath, "utf8");
-		return JSON.parse(content);
+		memoizedBuildMetadata = sanitizeBuildMetadata(JSON.parse(content));
 	} catch {
 		// Fallback for development or when metadata hasn't been generated
-		return {
-			version: "1.0.0-dev",
-			commitSha: "unknown",
-			commitShort: "unknown",
-			buildTime: new Date().toISOString(),
-			isCanary: true,
-			latestTag: null,
-			branch: "unknown",
-		};
+		memoizedBuildMetadata = { ...DEFAULT_BUILD_METADATA };
 	}
+
+	return memoizedBuildMetadata;
 }
 
 interface GitHubRelease {
@@ -120,6 +163,7 @@ async function fetchLatestRelease(): Promise<GitHubRelease> {
 				Accept: "application/vnd.github.v3+json",
 				"User-Agent": "Firepit-App",
 			},
+			signal: AbortSignal.timeout(10_000),
 			// Don't cache on fetch level since we're using our own cache
 			cache: "no-store",
 		},

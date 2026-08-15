@@ -9,7 +9,11 @@ export function useGlobalSearch() {
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
 			// Check for Ctrl+K (Windows/Linux) or Cmd+K (Mac)
-			if ((event.ctrlKey || event.metaKey) && event.key === "k") {
+			if (
+				!event.repeat &&
+				(event.ctrlKey || event.metaKey) &&
+				event.key === "k"
+			) {
 				event.preventDefault();
 				setIsOpen((prev) => !prev);
 			}

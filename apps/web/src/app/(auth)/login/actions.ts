@@ -5,6 +5,7 @@ import { Account, Client, ID, Query, Users } from "node-appwrite";
 import { cookies } from "next/headers";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
+import { invalidateSessionCacheForToken } from "@/lib/auth-server";
 import { assignDefaultRoleServer } from "@/lib/default-role";
 import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
 import { logger } from "@/lib/newrelic-utils";
@@ -725,6 +726,7 @@ export async function logoutAction(): Promise<{ success: boolean }> {
                     .catch(() => {
                         // Ignore errors - cookie will be deleted anyway
                     });
+                invalidateSessionCacheForToken(endpoint, project, sessionCookie.value);
             }
         }
 

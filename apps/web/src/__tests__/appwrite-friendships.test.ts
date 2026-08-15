@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockDatabases, mockGetOrCreateNotificationSettings } = vi.hoisted(
-    () => ({
+const { mockDatabases, mockGetOrCreateNotificationSettings, mockGetNotificationSettings } =
+    vi.hoisted(() => ({
         mockDatabases: {
             listDocuments: vi.fn(),
             createDocument: vi.fn(),
@@ -9,8 +9,8 @@ const { mockDatabases, mockGetOrCreateNotificationSettings } = vi.hoisted(
             deleteDocument: vi.fn(),
         },
         mockGetOrCreateNotificationSettings: vi.fn(),
-    }),
-);
+        mockGetNotificationSettings: vi.fn(),
+    }));
 
 vi.mock("node-appwrite", () => ({
     ID: {
@@ -28,6 +28,8 @@ vi.mock("node-appwrite", () => ({
         equal: (field: string, value: string) => `equal(${field},${value})`,
         limit: (limit: number) => `limit(${limit})`,
         orderDesc: (field: string) => `orderDesc(${field})`,
+        or: (queries: string[]) => `or(${queries.join(",")})`,
+        and: (queries: string[]) => `and(${queries.join(",")})`,
     },
 }));
 
@@ -49,12 +51,16 @@ vi.mock("@/lib/appwrite-core", () => ({
 
 vi.mock("@/lib/notification-settings", () => ({
     getOrCreateNotificationSettings: mockGetOrCreateNotificationSettings,
+    getNotificationSettings: mockGetNotificationSettings,
 }));
 
 describe("appwrite-friendships", () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.resetAllMocks();
         mockGetOrCreateNotificationSettings.mockResolvedValue({
+            directMessagePrivacy: "everyone",
+        });
+        mockGetNotificationSettings.mockResolvedValue({
             directMessagePrivacy: "everyone",
         });
     });
@@ -139,7 +145,7 @@ describe("appwrite-friendships", () => {
             .mockResolvedValueOnce({ documents: [] })
             .mockResolvedValueOnce({ documents: [] })
             .mockResolvedValueOnce({ documents: [] });
-        mockGetOrCreateNotificationSettings.mockResolvedValue({
+        mockGetNotificationSettings.mockResolvedValue({
             directMessagePrivacy: "friends",
         });
 

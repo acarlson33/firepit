@@ -11,20 +11,38 @@ import {
     returnForbidden,
 } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 
 const env = getEnvConfig();
 const databaseId = env.databaseId || "main";
 const rolesCollectionId = "roles";
 
+const ROLE_PERMISSION_FIELDS = [
+    "readMessages",
+    "sendMessages",
+    "manageMessages",
+    "manageChannels",
+    "manageRoles",
+    "manageServer",
+    "mentionEveryone",
+    "administrator",
+] as const;
+
 function getDatabases() {
     return getServerClient().databases;
 }
 
-async function requireManageRolesAccess(serverId: string) {
+async function requireManageRolesAccess(serverId: string): Promise<
+    | { ok: false; error: NextResponse }
+    | {
+          ok: true;
+          access: Awaited<ReturnType<typeof getServerPermissionsForUser>>;
+      }
+> {
     const databases = getDatabases();
     const session = await getServerSession();
     if (!session?.$id) {
-        return returnUnauthorized();
+        return { ok: false, error: returnUnauthorized() };
     }
 
     const access = await getServerPermissionsForUser(
@@ -35,10 +53,28 @@ async function requireManageRolesAccess(serverId: string) {
     );
 
     if (!access.isMember || !access.permissions.manageRoles) {
-        return returnForbidden();
+        return { ok: false, error: returnForbidden() };
     }
 
-    return null;
+    return { ok: true, access };
+}
+
+// Prevent privilege escalation: a role can never grant a permission the
+// caller does not hold themselves.
+function clampPermissions(
+    values: Partial<
+        Record<(typeof ROLE_PERMISSION_FIELDS)[number], boolean | undefined>
+    >,
+    allowed: Awaited<
+        ReturnType<typeof getServerPermissionsForUser>
+    >["permissions"],
+): void {
+    for (const field of ROLE_PERMISSION_FIELDS) {
+        const value = values[field];
+        if (typeof value === "boolean") {
+            values[field] = value && allowed[field];
+        }
+    }
 }
 
 // GET: List roles for a server
@@ -55,7 +91,7 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const [authError, response] = await Promise.all([
+        const [authResult, response] = await Promise.all([
             requireManageRolesAccess(serverId),
             databases.listDocuments(
                 databaseId,
@@ -68,8 +104,8 @@ export async function GET(request: NextRequest) {
             ),
         ]);
 
-        if (authError) {
-            return authError;
+        if (!authResult.ok) {
+            return authResult.error;
         }
 
         return NextResponse.json({ roles: response.documents });
@@ -113,9 +149,9 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const authError = await requireManageRolesAccess(serverId);
-        if (authError) {
-            return authError;
+        const authResult = await requireManageRolesAccess(serverId);
+        if (!authResult.ok) {
+            return authResult.error;
         }
 
         const roleData = {
@@ -135,7 +171,7 @@ export async function POST(request: NextRequest) {
             defaultOnJoin: defaultOnJoin ?? false,
             memberCount: 0,
         };
-
+        clampPermissions(roleData, authResult.access.permissions);
         const role = await databases.createDocument(
             databaseId,
             rolesCollectionId,
@@ -198,11 +234,11 @@ export async function PUT(request: NextRequest) {
             rolesCollectionId,
             $id,
         );
-        const authError = await requireManageRolesAccess(
+        const authResult = await requireManageRolesAccess(
             String(existingRole.serverId),
         );
-        if (authError) {
-            return authError;
+        if (!authResult.ok) {
+            return authResult.error;
         }
 
         const updateData: Partial<Role> = {};
@@ -246,6 +282,8 @@ export async function PUT(request: NextRequest) {
             updateData.defaultOnJoin = defaultOnJoin;
         }
 
+        clampPermissions(updateData, authResult.access.permissions);
+
         const role = await databases.updateDocument(
             databaseId,
             rolesCollectionId,
@@ -257,13 +295,19 @@ export async function PUT(request: NextRequest) {
             await enforceSingleDefaultRole(
                 databases,
                 databaseId,
-                role.serverId,
+                String(existingRole.serverId),
                 $id,
             );
         }
 
         return NextResponse.json({ role });
     } catch (error) {
+        if (isDocumentNotFoundError(error)) {
+            return NextResponse.json(
+                { error: "Role not found" },
+                { status: 404 },
+            );
+        }
         logger.error("Failed to update role", {
             error: error instanceof Error ? error.message : String(error),
         });
@@ -293,17 +337,23 @@ export async function DELETE(request: NextRequest) {
             rolesCollectionId,
             roleId,
         );
-        const authError = await requireManageRolesAccess(
+        const authResult = await requireManageRolesAccess(
             String(existingRole.serverId),
         );
-        if (authError) {
-            return authError;
+        if (!authResult.ok) {
+            return authResult.error;
         }
 
         await databases.deleteDocument(databaseId, rolesCollectionId, roleId);
 
         return NextResponse.json({ success: true });
     } catch (error) {
+        if (isDocumentNotFoundError(error)) {
+            return NextResponse.json(
+                { error: "Role not found" },
+                { status: 404 },
+            );
+        }
         logger.error("Failed to delete role", {
             error: error instanceof Error ? error.message : String(error),
         });

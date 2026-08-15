@@ -3,28 +3,18 @@ import type { Databases } from "node-appwrite";
 
 import type { EnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/newrelic-utils";
+import { chunkValues, listPages } from "@/lib/appwrite-pagination";
 import {
     buildMessagePoll,
     normalizePollDocument,
     normalizePollVoteDocument,
     type PollDocShape,
+    type PollVoteDocShape,
 } from "@/lib/polls";
 import type { MessagePoll } from "@/lib/types";
 
 const POLL_VOTES_PAGE_LIMIT = 1000;
-
-// Some test mocks/older SDK surfaces may not expose Query cursor helpers.
-type QueryWithPagination = typeof Query & {
-    cursorAfter?: (cursor: string) => string;
-    orderAsc?: (field: string) => string;
-};
-
-type PollVoteDocShape = {
-    $id: string;
-    pollId: string;
-    userId: string;
-    optionId: string;
-};
+const QUERY_ARRAY_LIMIT = 100;
 
 export async function getPollDocumentByMessageId(
     databases: Databases,
@@ -47,26 +37,17 @@ async function listVotesForPoll(
     databases: Databases,
     env: EnvConfig,
     pollId: string,
-): Promise<PollVoteDocShape[]> {
+): Promise<{ votes: PollVoteDocShape[]; truncated: boolean }> {
     const votes: PollVoteDocShape[] = [];
-    const queryWithPagination = Query as QueryWithPagination;
-    const cursorAfterFn = queryWithPagination.cursorAfter;
-    const orderQuery =
-        typeof queryWithPagination.orderAsc === "function"
-            ? queryWithPagination.orderAsc("$id")
-            : null;
-    const supportsStableCursorPagination =
-        cursorAfterFn !== undefined && orderQuery !== null;
     let cursor: string | undefined;
+    let truncated = false;
 
     while (true) {
         const queries = [
             Query.equal("pollId", pollId),
-            ...(orderQuery ? [orderQuery] : []),
+            Query.orderAsc("$id"),
             Query.limit(POLL_VOTES_PAGE_LIMIT),
-            ...(cursor && supportsStableCursorPagination && cursorAfterFn
-                ? [cursorAfterFn(cursor)]
-                : []),
+            ...(cursor ? [Query.cursorAfter(cursor)] : []),
         ];
 
         const response = await databases.listDocuments(
@@ -85,21 +66,14 @@ async function listVotesForPoll(
             break;
         }
 
-        if (!supportsStableCursorPagination) {
-            logger.warn(
-                "Poll votes pagination helpers unavailable; stopping after first full page",
-                {
-                    hasOrderAsc: Boolean(orderQuery),
-                    hasCursorAfter: Boolean(cursorAfterFn),
-                    pageLimit: POLL_VOTES_PAGE_LIMIT,
-                    pollId,
-                },
-            );
+        const lastDocument = response.documents.at(-1);
+        if (!lastDocument || typeof lastDocument.$id !== "string") {
+            truncated = true;
             break;
         }
 
-        const lastDocument = response.documents.at(-1);
-        if (!lastDocument || typeof lastDocument.$id !== "string") {
+        if (lastDocument.$id === cursor) {
+            truncated = true;
             break;
         }
 
@@ -113,7 +87,7 @@ async function listVotesForPoll(
         });
     }
 
-    return votes;
+    return { votes, truncated };
 }
 
 export async function getPollStateForMessage(
@@ -126,7 +100,15 @@ export async function getPollStateForMessage(
         return null;
     }
 
-    const votes = await listVotesForPoll(databases, env, poll.$id);
+    const { votes, truncated } = await listVotesForPoll(databases, env, poll.$id);
+    if (truncated) {
+        logger.warn(
+            "Poll vote pagination truncated; skipping poll state to avoid incomplete counts",
+            { pollId: poll.$id, messageId },
+        );
+        return null;
+    }
+
     return buildMessagePoll({ poll, votes });
 }
 
@@ -138,45 +120,46 @@ export async function getPollStatesForMessages(
     const result = new Map<string, MessagePoll>();
     if (messageIds.length === 0) return result;
 
-    // Batch fetch all poll documents for these messages in a single query
-    const pollResponse = await databases.listDocuments(
-        env.databaseId,
-        env.collections.polls,
-        [
-            Query.equal("messageId", messageIds),
-            Query.limit(100),
-        ],
-    );
+    const polls: PollDocShape[] = [];
+    for (const messageIdChunk of chunkValues(messageIds, QUERY_ARRAY_LIMIT)) {
+        const { documents } = await listPages({
+            databases,
+            databaseId: env.databaseId,
+            collectionId: env.collections.polls,
+            baseQueries: [Query.equal("messageId", messageIdChunk)],
+            pageSize: 100,
+            warningContext: "getPollStatesForMessages-polls",
+        });
 
-    const polls = pollResponse.documents
-        .map((doc) => normalizePollDocument(doc))
-        .filter((p): p is PollDocShape => p !== null);
+        for (const document of documents) {
+            const poll = normalizePollDocument(document);
+            if (poll) polls.push(poll);
+        }
+    }
 
     if (polls.length === 0) return result;
 
-    // Batch fetch all votes for these polls in a single query
     const pollIds = polls.map((p) => p.$id);
-    const votesResponse = await databases.listDocuments(
-        env.databaseId,
-        env.collections.pollVotes,
-        [
-            Query.equal("pollId", pollIds),
-            Query.limit(pollIds.length * 200),
-        ],
-    );
-
-    const votes = votesResponse.documents
-        .map((raw) => normalizePollVoteDocument(raw))
-        .filter((v): v is PollVoteDocShape => v !== null);
-
-    // Group votes by pollId for efficient lookup
     const votesByPollId = new Map<string, PollVoteDocShape[]>();
-    for (const vote of votes) {
-        const existing = votesByPollId.get(vote.pollId);
-        if (existing) {
-            existing.push(vote);
-        } else {
-            votesByPollId.set(vote.pollId, [vote]);
+    for (const pollIdChunk of chunkValues(pollIds, QUERY_ARRAY_LIMIT)) {
+        const { documents } = await listPages({
+            databases,
+            databaseId: env.databaseId,
+            collectionId: env.collections.pollVotes,
+            baseQueries: [Query.equal("pollId", pollIdChunk)],
+            pageSize: POLL_VOTES_PAGE_LIMIT,
+            warningContext: "getPollStatesForMessages-votes",
+        });
+
+        for (const rawVote of documents) {
+            const vote = normalizePollVoteDocument(rawVote);
+            if (!vote) continue;
+            const existing = votesByPollId.get(vote.pollId);
+            if (existing) {
+                existing.push(vote);
+            } else {
+                votesByPollId.set(vote.pollId, [vote]);
+            }
         }
     }
 

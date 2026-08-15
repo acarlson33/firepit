@@ -190,17 +190,15 @@ export async function GET(request: NextRequest) {
         }
 
         const dbStartTime = Date.now();
+
+        const messages = (response.documents ?? []).map((doc) =>
+            mapMessageDocument(doc as Record<string, unknown>),
+        );
+
         trackApiCall("/api/messages", "GET", 200, Date.now() - dbStartTime, {
-            operation: "listDocuments",
+            operation: "mapMessageDocument",
             collection: "messages",
         });
-
-        const messages = await Promise.all(
-          (response.documents ?? []).map(async (doc) => {
-            const msg = mapMessageDocument(doc as Record<string, unknown>);
-            return msg;
-          }),
-        );
 
         // Batch fetch poll states for all messages (single DB call instead of N+1)
         try {
@@ -214,9 +212,15 @@ export async function GET(request: NextRequest) {
           // Poll fetch failed, continue without poll data
         }
 
+        const lastRawDoc = response.documents.at(-1);
+        const nextCursor =
+            response.documents.length === limit && lastRawDoc
+                ? String(lastRawDoc.$id)
+                : null;
+
         return NextResponse.json<ListMessagesResponse>({
             messages,
-            nextCursor: null,
+            nextCursor,
         });
     } catch (error) {
         recordError(error instanceof Error ? error : new Error(String(error)), {
@@ -241,54 +245,67 @@ export async function GET(request: NextRequest) {
 }
 
 // Helper function to create attachment records
+// Returns array of created attachment document IDs
 async function createAttachments(
     messageId: string,
     messageType: "channel" | "dm",
     attachments: FileAttachment[],
-): Promise<void> {
+): Promise<string[]> {
     if (!attachments || attachments.length === 0) {
-        return;
+        return [];
     }
 
     const env = getEnvConfig();
     const { databases } = getServerClient();
 
-    await Promise.all(
-        attachments.map(async (attachment) => {
-            const payload = buildAttachmentDocumentData({
-                attachment,
-                messageId,
-                messageType,
-            });
+    const createdIds: string[] = [];
+
+    const rethrowWithCreatedIds = (error: unknown): never => {
+        const attachmentError =
+            error instanceof Error ? error : new Error(String(error));
+        (attachmentError as Error & { createdIds: string[] }).createdIds = [
+            ...createdIds,
+        ];
+        throw attachmentError;
+    };
+
+    for (const attachment of attachments) {
+        const payload = buildAttachmentDocumentData({
+            attachment,
+            messageId,
+            messageType,
+        });
+
+        try {
+            const result = await databases.createDocument(
+                env.databaseId,
+                MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                ID.unique(),
+                payload,
+            );
+            createdIds.push(String(result.$id));
+        } catch (error) {
+            if (!isUnknownAttachmentAttributeError(error)) {
+                rethrowWithCreatedIds(error);
+            }
+
+            logger.warn(
+                "Using legacy attachment payload fallback for message attachment write",
+                {
+                    attachmentFileId: attachment.fileId,
+                    attachmentMediaKind: attachment.mediaKind,
+                    attachmentSource: attachment.source,
+                    messageId,
+                    messageType,
+                    reason:
+                        error instanceof Error
+                            ? error.message
+                            : String(error),
+                },
+            );
 
             try {
-                await databases.createDocument(
-                    env.databaseId,
-                    MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                    ID.unique(),
-                    payload,
-                );
-            } catch (error) {
-                if (!isUnknownAttachmentAttributeError(error)) {
-                    throw error;
-                }
-
-                logger.warn(
-                    "Using legacy attachment payload fallback for message attachment write",
-                    {
-                        attachmentFileId: attachment.fileId,
-                        attachmentMediaKind: attachment.mediaKind,
-                        attachmentSource: attachment.source,
-                        messageId,
-                        messageType,
-                        reason:
-                            error instanceof Error
-                                ? error.message
-                                : String(error),
-                    },
-                );
-
-                await databases.createDocument(
+                const legacyResult = await databases.createDocument(
                     env.databaseId,
                     MESSAGE_ATTACHMENTS_COLLECTION_ID,
                     ID.unique(),
@@ -298,9 +315,14 @@ async function createAttachments(
                         messageType,
                     }),
                 );
+                createdIds.push(String(legacyResult.$id));
+            } catch (legacyError) {
+                rethrowWithCreatedIds(legacyError);
             }
-        }),
-    );
+        }
+    }
+
+    return createdIds;
 }
 
 /**
@@ -580,6 +602,36 @@ export async function POST(request: NextRequest) {
                     normalizedAttachments,
                 );
             } catch (attachmentError) {
+                const attachmentErrorWithIds = attachmentError as Error & {
+                    createdIds?: string[];
+                };
+                const createdAttachmentIds = Array.isArray(
+                    attachmentErrorWithIds.createdIds,
+                )
+                    ? attachmentErrorWithIds.createdIds
+                    : [];
+
+                for (const createdId of createdAttachmentIds) {
+                    try {
+                        await databases.deleteDocument(
+                            env.databaseId,
+                            MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                            createdId,
+                        );
+                    } catch (cleanupError) {
+                        logger.warn(
+                            "Failed to roll back message attachment after attachment error",
+                            {
+                                attachmentId: createdId,
+                                error:
+                                    cleanupError instanceof Error
+                                        ? cleanupError.message
+                                        : String(cleanupError),
+                            },
+                        );
+                    }
+                }
+
                 // Roll back the created message if attachment write fails
                 try {
                     await databases.deleteDocument(

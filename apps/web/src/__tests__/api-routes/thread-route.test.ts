@@ -54,7 +54,24 @@ vi.mock("@/lib/appwrite-core", () => ({
     perms: { message: vi.fn(() => []) },
 }));
 
+vi.mock("@/lib/server-channel-access", () => ({
+    getChannelAccessForUser: vi.fn(() =>
+        Promise.resolve({
+            serverId: "server-1",
+            isServerOwner: false,
+            isMember: true,
+            canRead: true,
+            canSend: true,
+        }),
+    ),
+    getServerPermissionsForUser: vi.fn(() =>
+        Promise.resolve({ permissions: { mentionEveryone: true } }),
+    ),
+}));
+
 vi.mock("@/lib/newrelic-utils", () => ({
+    returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+    returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
     logger: {
         info: vi.fn(),
         warn: vi.fn(),

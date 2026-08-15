@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
     createAnnouncement,
     listAnnouncements,
+    parseLimit,
 } from "@/lib/appwrite-announcements";
 import type {
     AnnouncementCreateMode,
@@ -10,10 +11,7 @@ import type {
     AnnouncementStatus,
 } from "@/lib/types";
 import { AuthError, requireAdmin } from "@/lib/auth-server";
-import { logger,
-    returnUnauthorized,
-    returnForbidden,
-} from "@/lib/newrelic-utils";
+import { logger } from "@/lib/newrelic-utils";
 
 const ALLOWED_PRIORITIES: ReadonlySet<AnnouncementPriority> = new Set([
     "normal",
@@ -44,19 +42,6 @@ interface AnnouncementPayload {
     title?: unknown;
 }
 
-function parseLimit(rawLimit: string | null): number {
-    if (!rawLimit) {
-        return 25;
-    }
-
-    const parsed = Number.parseInt(rawLimit, 10);
-    if (Number.isNaN(parsed)) {
-        return 25;
-    }
-
-    return Math.max(1, Math.min(parsed, 100));
-}
-
 function parseStatuses(rawStatuses: string | null): AnnouncementStatus[] {
     if (!rawStatuses) {
         return [];
@@ -65,13 +50,18 @@ function parseStatuses(rawStatuses: string | null): AnnouncementStatus[] {
     const statuses = rawStatuses
         .split(",")
         .map((status) => status.trim())
-        .filter((status) => ALLOWED_STATUSES.has(status as AnnouncementStatus))
-        .map((status) => status as AnnouncementStatus);
+        .filter((status): status is AnnouncementStatus =>
+            ALLOWED_STATUSES.has(status as AnnouncementStatus),
+        );
 
     return Array.from(new Set(statuses));
 }
 
-function parseMode(rawMode: unknown): AnnouncementCreateMode {
+function parseMode(rawMode: unknown): AnnouncementCreateMode | null {
+    if (rawMode === undefined) {
+        return "draft";
+    }
+
     if (
         typeof rawMode === "string" &&
         ALLOWED_MODES.has(rawMode as AnnouncementCreateMode)
@@ -79,10 +69,14 @@ function parseMode(rawMode: unknown): AnnouncementCreateMode {
         return rawMode as AnnouncementCreateMode;
     }
 
-    return "draft";
+    return null;
 }
 
-function parsePriority(rawPriority: unknown): AnnouncementPriority {
+function parsePriority(rawPriority: unknown): AnnouncementPriority | null {
+    if (rawPriority === undefined) {
+        return "normal";
+    }
+
     if (
         typeof rawPriority === "string" &&
         ALLOWED_PRIORITIES.has(rawPriority as AnnouncementPriority)
@@ -90,7 +84,7 @@ function parsePriority(rawPriority: unknown): AnnouncementPriority {
         return rawPriority as AnnouncementPriority;
     }
 
-    return "normal";
+    return null;
 }
 
 function authErrorResponse(error: AuthError): NextResponse {
@@ -163,9 +157,12 @@ export async function POST(request: Request): Promise<NextResponse> {
 
         const payload = payloadValue as AnnouncementPayload;
 
-        if (typeof payload.body !== "string") {
+        if (
+            typeof payload.body !== "string" ||
+            payload.body.trim().length === 0
+        ) {
             return NextResponse.json(
-                { success: false, error: "body must be a string" },
+                { success: false, error: "body must be a non-empty string" },
                 { status: 400 },
             );
         }
@@ -197,12 +194,35 @@ export async function POST(request: Request): Promise<NextResponse> {
             );
         }
 
+        const mode = parseMode(payload.mode);
+        if (mode === null) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error:
+                        "mode must be one of draft, schedule, or send_now",
+                },
+                { status: 400 },
+            );
+        }
+
+        const priority = parsePriority(payload.priority);
+        if (priority === null) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: "priority must be one of normal or urgent",
+                },
+                { status: 400 },
+            );
+        }
+
         const announcement = await createAnnouncement({
             actorId: user.$id,
             body: payload.body,
             idempotencyKey: payload.idempotencyKey,
-            mode: parseMode(payload.mode),
-            priority: parsePriority(payload.priority),
+            mode,
+            priority,
             scheduledFor: payload.scheduledFor,
             title: payload.title,
         });

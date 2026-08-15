@@ -55,6 +55,8 @@ vi.mock("@/lib/appwrite-core", () => ({
 }));
 
 vi.mock("@/lib/newrelic-utils", () => ({
+    returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+    returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
     logger: {
         info: vi.fn(),
         warn: vi.fn(),
@@ -530,7 +532,7 @@ describe("POST /api/profiles/batch", () => {
         expect(mockListDocuments).toHaveBeenCalledTimes(2);
     });
 
-    it("should handle general errors with 500 status", async () => {
+    it("should return 400 on invalid JSON body", async () => {
         const request = createRequest({ userIds: ["user1"] });
         // Force a JSON parse error by modifying the request
         vi.spyOn(request, "json").mockRejectedValue(new Error("Parse error"));
@@ -538,8 +540,8 @@ describe("POST /api/profiles/batch", () => {
         const response = await POST(request);
         const data = await response.json();
 
-        expect(response.status).toBe(500);
-        expect(data.error).toBe("Failed to fetch profiles");
+        expect(response.status).toBe(400);
+        expect(data.error).toBe("Invalid JSON body");
     });
 
     it("should return empty profiles object when all fetches fail", async () => {

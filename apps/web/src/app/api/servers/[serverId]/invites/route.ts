@@ -1,15 +1,68 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
-import { getUserRoles } from "@/lib/appwrite-roles";
 import { createInvite, listServerInvites } from "@/lib/appwrite-invites";
 import { getServerClient } from "@/lib/appwrite-server";
+import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { logger, recordError,
     returnUnauthorized,
     returnForbidden,
 } from "@/lib/newrelic-utils";
 
 const { databases } = getServerClient();
-const env = await import("@/lib/appwrite-core").then((m) => m.getEnvConfig());
+const env = getEnvConfig();
+
+function hasInvitePermission(access: {
+    isServerOwner: boolean;
+    permissions: { administrator: boolean; manageServer: boolean };
+}): boolean {
+    return (
+        access.isServerOwner ||
+        access.permissions.administrator ||
+        access.permissions.manageServer
+    );
+}
+
+function validateBody(body: unknown): {
+    channelId: unknown;
+    expiresAt: unknown;
+    maxUses: unknown;
+    temporary: unknown;
+} | null {
+    if (typeof body !== "object" || body === null) {
+        return null;
+    }
+    const { channelId, expiresAt, maxUses, temporary } = body as Record<
+        string,
+        unknown
+    >;
+
+    if (channelId !== null && channelId !== undefined && typeof channelId !== "string") {
+        return null;
+    }
+    if (expiresAt !== null && expiresAt !== undefined) {
+        if (typeof expiresAt !== "string" || Number.isNaN(Date.parse(expiresAt))) {
+            return null;
+        }
+        if (new Date(expiresAt).getTime() <= Date.now()) {
+            return null;
+        }
+    }
+    if (maxUses !== null && maxUses !== undefined) {
+        if (
+            typeof maxUses !== "number" ||
+            !Number.isInteger(maxUses) ||
+            maxUses <= 0
+        ) {
+            return null;
+        }
+    }
+    if (temporary !== null && temporary !== undefined && typeof temporary !== "boolean") {
+        return null;
+    }
+
+    return { channelId, expiresAt, maxUses, temporary };
+}
 
 /**
  * POST /api/servers/[serverId]/invites - Create a new invite
@@ -23,65 +76,50 @@ export async function POST(
     try {
         // Authenticate user
         const user = await getServerSession();
-        if (!user) {
-            return NextResponse.json(
-                { error: "Unauthorized" },
-                { status: 401 },
-            );
+        if (!user?.$id) {
+            return returnUnauthorized();
         }
 
         const { serverId } = await params;
         const userId = user.$id;
 
         // Get request body
-        const body = await request.json();
-        const { channelId, expiresAt, maxUses, temporary } = body;
-
-        // Validate serverId
-        if (!serverId) {
+        let body: unknown;
+        try {
+            body = await request.json();
+        } catch {
             return NextResponse.json(
-                { error: "serverId is required" },
+                { error: "Invalid JSON payload" },
+                { status: 400 },
+            );
+        }
+        const fields = validateBody(body);
+        if (!fields) {
+            return NextResponse.json(
+                { error: "Invalid invite fields" },
                 { status: 400 },
             );
         }
 
-        // Check if server exists and get owner
-        let server;
-        try {
-            server = await databases.getDocument(
-                env.databaseId,
-                env.collections.servers,
-                serverId,
-            );
-        } catch {
-            return NextResponse.json(
-                { error: "Server not found" },
-                { status: 404 },
-            );
-        }
-
-        // Check permissions: owner or global admin
-        const isOwner = server.ownerId === userId;
-        const globalRoles = await getUserRoles(userId);
-        const isAdmin = globalRoles.isAdmin;
-
-        if (!isOwner && !isAdmin) {
-            return NextResponse.json(
-                {
-                    error: "Insufficient permissions. You must be the server owner or a global admin.",
-                },
-                { status: 403 },
-            );
+        // Check server-level permissions: owner, administrator, or manageServer
+        const access = await getServerPermissionsForUser(
+            databases,
+            env,
+            serverId,
+            userId,
+        );
+        if (!hasInvitePermission(access)) {
+            return returnForbidden();
         }
 
         // Create the invite
         const invite = await createInvite({
             serverId,
             creatorId: userId,
-            channelId,
-            expiresAt,
-            maxUses,
-            temporary,
+            channelId: fields.channelId as string | undefined,
+            expiresAt: fields.expiresAt as string | undefined,
+            maxUses: fields.maxUses as number | null | undefined,
+            temporary: fields.temporary as boolean | undefined,
         });
 
         logger.info("Invite created", {
@@ -104,12 +142,7 @@ export async function POST(
         });
 
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to create invite",
-            },
+            { error: "Failed to create invite" },
             { status: 500 },
         );
     }
@@ -119,7 +152,7 @@ export async function POST(
  * GET /api/servers/[serverId]/invites - List all invites for a server
  */
 export async function GET(
-    request: Request,
+    _request: Request,
     { params }: { params: Promise<{ serverId: string }> },
 ) {
     const startTime = Date.now();
@@ -127,43 +160,22 @@ export async function GET(
     try {
         // Authenticate user
         const user = await getServerSession();
-        if (!user) {
-            return NextResponse.json(
-                { error: "Unauthorized" },
-                { status: 401 },
-            );
+        if (!user?.$id) {
+            return returnUnauthorized();
         }
 
         const { serverId } = await params;
         const userId = user.$id;
 
-        // Check if server exists and get owner
-        let server;
-        try {
-            server = await databases.getDocument(
-                env.databaseId,
-                env.collections.servers,
-                serverId,
-            );
-        } catch {
-            return NextResponse.json(
-                { error: "Server not found" },
-                { status: 404 },
-            );
-        }
-
-        // Check permissions: owner or global admin
-        const isOwner = server.ownerId === userId;
-        const globalRoles = await getUserRoles(userId);
-        const isAdmin = globalRoles.isAdmin;
-
-        if (!isOwner && !isAdmin) {
-            return NextResponse.json(
-                {
-                    error: "Insufficient permissions. You must be the server owner or a global admin.",
-                },
-                { status: 403 },
-            );
+        // Check server-level permissions: owner, administrator, or manageServer
+        const access = await getServerPermissionsForUser(
+            databases,
+            env,
+            serverId,
+            userId,
+        );
+        if (!hasInvitePermission(access)) {
+            return returnForbidden();
         }
 
         // List invites
@@ -188,12 +200,7 @@ export async function GET(
         });
 
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to list invites",
-            },
+            { error: "Failed to list invites" },
             { status: 500 },
         );
     }

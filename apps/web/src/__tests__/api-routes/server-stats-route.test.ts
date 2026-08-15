@@ -10,6 +10,17 @@ vi.mock("node-appwrite", () => ({
         greaterThan: vi.fn(() => "greaterThan"),
         limit: vi.fn(() => "limit"),
     },
+    AppwriteException: class AppwriteException extends Error {
+        code: number;
+        type: string;
+        constructor(message: string, code = 500, type = "unknown") {
+            super(message);
+            this.name = "AppwriteException";
+            this.code = code;
+            this.type = type;
+            Object.setPrototypeOf(this, new.target.prototype);
+        }
+    },
 }));
 
 const { mockGetDocument, mockListDocuments } = vi.hoisted(() => ({
@@ -129,7 +140,7 @@ describe("Server stats route", () => {
     });
 
     it("returns 404 when server is missing", async () => {
-        mockGetDocument.mockResolvedValue(null);
+        mockGetDocument.mockRejectedValue({ type: "document_not_found" });
 
         const response = await GET(
             new NextRequest("http://localhost/api/servers/server-1/stats"),

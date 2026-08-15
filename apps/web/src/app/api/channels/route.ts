@@ -13,7 +13,7 @@ import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { apiCache } from "@/lib/cache-utils";
 import { invalidateChannelsServerCaches } from "@/lib/channels-route-cache";
 import { listPages } from "@/lib/appwrite-pagination";
-import { returnUnauthorized, returnForbidden } from "@/lib/newrelic-utils";
+import { returnForbidden, logger } from "@/lib/newrelic-utils";
 
 const ROLE_ASSIGNMENTS_COLLECTION_ID = "role_assignments";
 const ROLES_COLLECTION_ID = "roles";
@@ -207,7 +207,6 @@ export async function POST(request: NextRequest) {
                 topic,
                 position: highestPosition + 1,
             },
-            ['read("any")'],
         );
 
         const channel = created as unknown as Record<string, unknown>;
@@ -245,13 +244,11 @@ export async function POST(request: NextRequest) {
             { status: 201 },
         );
     } catch (error) {
+        logger.error("Failed to create channel", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to create channel",
-            },
+            { error: "Failed to create channel" },
             { status: 500 },
         );
     }
@@ -552,11 +549,10 @@ export async function GET(request: NextRequest) {
                 overridesByChannel.set(channelId, existing);
             }
 
-            const hasAnyOverrides = overridesRes.documents.length > 0;
             channels = allChannels.filter((channel) => {
                 const channelOverrides =
                     overridesByChannel.get(channel.$id) ?? [];
-                if (roles.length === 0 && !hasAnyOverrides) {
+                if (roles.length === 0 && channelOverrides.length === 0) {
                     return true;
                 }
                 const effective = getEffectivePermissions(
@@ -589,13 +585,11 @@ export async function GET(request: NextRequest) {
 
         return response;
     } catch (error) {
+        logger.error("Failed to fetch channels", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to fetch channels",
-            },
+            { error: "Failed to fetch channels" },
             { status: 500 },
         );
     }

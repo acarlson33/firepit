@@ -84,11 +84,11 @@ function inferMediaKind(params: {
     providedMediaKind?: AttachmentMediaKind;
 }): AttachmentMediaKind {
     const { fileType, source, providedMediaKind } = params;
-    const normalizedFileType = fileType.toLowerCase();
-
     if (providedMediaKind) {
         return providedMediaKind;
     }
+
+    const normalizedFileType = fileType.toLowerCase();
 
     if (source === "builtin_sticker" || source === "admin_sticker") {
         return "sticker";
@@ -170,8 +170,13 @@ export function normalizeFileAttachmentsInput(
         };
     }
 
+    const requestedMax = options?.maxAttachments;
     const maxAttachments =
-        options?.maxAttachments ?? DEFAULT_MAX_ATTACHMENTS;
+        typeof requestedMax === "number" &&
+        Number.isInteger(requestedMax) &&
+        requestedMax > 0
+            ? requestedMax
+            : DEFAULT_MAX_ATTACHMENTS;
 
     if (input.length > maxAttachments) {
         return {
@@ -195,14 +200,13 @@ export function normalizeFileAttachmentsInput(
     return { ok: true, attachments: normalized };
 }
 
-export function buildAttachmentDocumentData(params: {
+function buildBaseAttachmentDocumentData(params: {
     attachment: FileAttachment;
     messageId: string;
     messageType: "channel" | "dm";
 }): Record<string, unknown> {
     const { attachment, messageId, messageType } = params;
-
-    const payload: Record<string, unknown> = {
+    return {
         fileId: attachment.fileId,
         fileName: attachment.fileName,
         fileSize: attachment.fileSize,
@@ -212,6 +216,15 @@ export function buildAttachmentDocumentData(params: {
         messageType,
         thumbnailUrl: attachment.thumbnailUrl || null,
     };
+}
+
+export function buildAttachmentDocumentData(params: {
+    attachment: FileAttachment;
+    messageId: string;
+    messageType: "channel" | "dm";
+}): Record<string, unknown> {
+    const { attachment } = params;
+    const payload = buildBaseAttachmentDocumentData(params);
 
     if (attachment.mediaKind) {
         payload.mediaKind = attachment.mediaKind;
@@ -243,18 +256,7 @@ export function buildLegacyAttachmentDocumentData(params: {
     messageId: string;
     messageType: "channel" | "dm";
 }): Record<string, unknown> {
-    const { attachment, messageId, messageType } = params;
-
-    return {
-        fileId: attachment.fileId,
-        fileName: attachment.fileName,
-        fileSize: attachment.fileSize,
-        fileType: attachment.fileType,
-        fileUrl: attachment.fileUrl,
-        messageId,
-        messageType,
-        thumbnailUrl: attachment.thumbnailUrl || null,
-    };
+    return buildBaseAttachmentDocumentData(params);
 }
 
 export function isUnknownAttachmentAttributeError(error: unknown): boolean {

@@ -56,6 +56,7 @@ vi.mock("@/lib/appwrite-server", () => ({
 // Mock node-appwrite Client and Databases
 vi.mock("node-appwrite", () => {
     return {
+        AppwriteException: class AppwriteException extends Error {},
         Query: {
             equal: (field: string, value: string) => `equal(${field},${value})`,
             orderDesc: (field: string) => `orderDesc(${field})`,
@@ -78,7 +79,16 @@ describe("Roles API", () => {
         mockGetServerSession.mockResolvedValue({ $id: "user-1" });
         mockGetServerPermissionsForUser.mockResolvedValue({
             isMember: true,
-            permissions: { manageRoles: true },
+            permissions: {
+                readMessages: true,
+                sendMessages: true,
+                manageMessages: true,
+                manageChannels: true,
+                manageRoles: true,
+                manageServer: true,
+                mentionEveryone: true,
+                administrator: true,
+            },
         });
 
         // Dynamically import the route handlers
@@ -295,6 +305,56 @@ describe("Roles API", () => {
                 }),
             );
         });
+
+        it("should clamp permissions that exceed the caller's own", async () => {
+            mockGetServerPermissionsForUser.mockResolvedValue({
+                isMember: true,
+                permissions: {
+                    readMessages: true,
+                    sendMessages: true,
+                    manageMessages: true,
+                    manageChannels: true,
+                    manageRoles: true,
+                    manageServer: false,
+                    mentionEveryone: false,
+                    administrator: false,
+                },
+            });
+            mockCreateDocument.mockResolvedValue({
+                $id: "role-1",
+                serverId: "server-1",
+                name: "Escalated",
+                administrator: true,
+                manageServer: true,
+                manageRoles: true,
+            });
+
+            const request = new NextRequest("http://localhost/api/roles", {
+                method: "POST",
+                body: JSON.stringify({
+                    serverId: "server-1",
+                    name: "Escalated",
+                    administrator: true,
+                    manageServer: true,
+                    manageRoles: true,
+                }),
+            });
+
+            const response = await POST(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(201);
+            expect(mockCreateDocument).toHaveBeenCalledWith(
+                expect.any(String),
+                "roles",
+                "mock-role-id",
+                expect.objectContaining({
+                    administrator: false,
+                    manageServer: false,
+                    manageRoles: true,
+                }),
+            );
+        });
     });
 
     describe("PUT /api/roles", () => {
@@ -379,6 +439,68 @@ describe("Roles API", () => {
                 expect.objectContaining({
                     manageMessages: true,
                 }),
+            );
+        });
+
+        it("should return 404 if the role does not exist", async () => {
+            mockGetDocument.mockRejectedValue(
+                Object.assign(new Error("missing"), {
+                    type: "document_not_found",
+                }),
+            );
+
+            const request = new NextRequest("http://localhost/api/roles", {
+                method: "PUT",
+                body: JSON.stringify({
+                    $id: "role-missing",
+                    name: "Updated",
+                }),
+            });
+
+            const response = await PUT(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(404);
+            expect(data.error).toContain("Role not found");
+        });
+
+        it("should clamp permission escalation on update", async () => {
+            mockGetDocument.mockResolvedValue({
+                $id: "role-1",
+                serverId: "server-1",
+            });
+            mockGetServerPermissionsForUser.mockResolvedValue({
+                isMember: true,
+                permissions: {
+                    readMessages: true,
+                    sendMessages: true,
+                    manageMessages: true,
+                    manageChannels: true,
+                    manageRoles: true,
+                    manageServer: false,
+                    mentionEveryone: false,
+                    administrator: false,
+                },
+            });
+            mockUpdateDocument.mockResolvedValue({
+                $id: "role-1",
+                administrator: true,
+            });
+
+            const request = new NextRequest("http://localhost/api/roles", {
+                method: "PUT",
+                body: JSON.stringify({ $id: "role-1", administrator: true }),
+            });
+
+            const response = await PUT(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(200);
+            expect(mockUpdateDocument).toHaveBeenCalledWith(
+                expect.any(String),
+                "roles",
+                "role-1",
+                expect.objectContaining({ administrator: false }),
             );
         });
     });

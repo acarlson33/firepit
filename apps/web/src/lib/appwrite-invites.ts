@@ -12,12 +12,15 @@ import { apiCache } from "./cache-utils";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
-const INVITES_COLLECTION_ID = "invites";
-const INVITE_USAGE_COLLECTION_ID = "invite_usage";
+const INVITES_COLLECTION_ID = env.collections.invites || "invites";
+const INVITE_USAGE_COLLECTION_ID = env.collections.inviteUsage || "invite_usage";
 const MEMBERSHIPS_COLLECTION_ID = env.collections.memberships || "memberships";
 const SERVERS_COLLECTION_ID = env.collections.servers;
 const ROLE_MEMBER = "member";
 const INVITE_CACHE_TTL_MS = 10 * 1000;
+// A fresh usage slot has no membership yet; only orphan slots older than this
+// are safe to delete. # ponytail: fixed threshold, tune once join latency is known.
+const INVITE_USAGE_ORPHAN_MIN_AGE_MS = 10 * 60_000;
 
 type CreateInviteOptions = {
     serverId: string;
@@ -126,12 +129,14 @@ async function reconcileOrphanedInviteUsageSlots(options?: {
         usageId: string;
         userId: string;
         serverId: string;
+        createdAt: string;
     }> = [];
     const userIdsByServerId = new Map<string, Set<string>>();
 
     for (const usageDocument of allDocs) {
         const userId = (usageDocument as Record<string, unknown>).userId;
         const serverId = (usageDocument as Record<string, unknown>).serverId;
+        const createdAt = (usageDocument as Record<string, unknown>).$createdAt;
 
         if (typeof userId !== "string" || typeof serverId !== "string") {
             flagged += 1;
@@ -150,6 +155,7 @@ async function reconcileOrphanedInviteUsageSlots(options?: {
             usageId: String(usageDocument.$id),
             userId,
             serverId,
+            createdAt: typeof createdAt === "string" ? createdAt : "",
         });
 
         const serverUserIds = userIdsByServerId.get(serverId) ?? new Set();
@@ -218,9 +224,19 @@ async function reconcileOrphanedInviteUsageSlots(options?: {
         const orphanUsageIds = validUsageEntries
             .filter((entry) => {
                 const membershipKey = `${entry.serverId}:${entry.userId}`;
+                if (
+                    existingMembershipKeys.has(membershipKey) ||
+                    failedMembershipKeys.has(membershipKey)
+                ) {
+                    return false;
+                }
+
+                // Skip recently created slots whose membership may still be
+                // in flight.
+                const createdAt = Date.parse(entry.createdAt);
                 return (
-                    !existingMembershipKeys.has(membershipKey) &&
-                    !failedMembershipKeys.has(membershipKey)
+                    !Number.isNaN(createdAt) &&
+                    Date.now() - createdAt >= INVITE_USAGE_ORPHAN_MIN_AGE_MS
                 );
             })
             .map((entry) => entry.usageId);
@@ -332,26 +348,33 @@ export async function createInvite(
  * @param {string} code - The code value.
  * @returns {Promise<ServerInvite | null>} The return value.
  */
-export async function getInviteByCode(
+async function fetchInviteByCodeFromDb(
     code: string,
 ): Promise<ServerInvite | null> {
     const { databases } = getServerClient();
+    const result = await databases.listDocuments(
+        DATABASE_ID,
+        INVITES_COLLECTION_ID,
+        [Query.equal("code", code), Query.limit(1)],
+    );
 
+    if (result.documents.length === 0) {
+        return null;
+    }
+
+    return result.documents[0] as unknown as ServerInvite;
+}
+
+export async function getInviteByCode(
+    code: string,
+): Promise<ServerInvite | null> {
     try {
         const result = await dedupeInviteCache(
             inviteByCodeCacheKey(code),
-            () =>
-                databases.listDocuments(DATABASE_ID, INVITES_COLLECTION_ID, [
-                    Query.equal("code", code),
-                    Query.limit(1),
-                ]),
+            () => fetchInviteByCodeFromDb(code),
         );
 
-        if (result.documents.length === 0) {
-            return null;
-        }
-
-        return result.documents[0] as unknown as ServerInvite;
+        return result;
     } catch (error) {
         logger.error("Failed to get invite by code:", { error });
         return null;
@@ -513,7 +536,7 @@ export async function useInvite(
 
                 highestAttemptedIndex = nextUseIndex;
 
-                const refreshedInvite = await getInviteByCode(code);
+                const refreshedInvite = await fetchInviteByCodeFromDb(code);
                 if (!refreshedInvite) {
                     return {
                         success: false,

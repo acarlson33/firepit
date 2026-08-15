@@ -6,6 +6,7 @@ import { getAvatarUrl } from "@/lib/appwrite-profiles";
 import { getServerSession } from "@/lib/auth-server";
 import { getRelationshipMap } from "@/lib/appwrite-friendships";
 import { apiCache } from "@/lib/cache-utils";
+import { logger } from "@/lib/newrelic-utils";
 
 const USERS_SEARCH_CACHE_TTL_MS = 10 * 1000;
 
@@ -44,7 +45,9 @@ export async function GET(request: Request) {
         const { databases } = getAdminClient();
         const env = getEnvConfig();
 
-        // Search by displayName (case-insensitive via contains) or exact userId match
+        // Search by displayName via fulltext search, or exact userId match.
+        // Query.search requires a fulltext index on the displayName attribute
+        // in Appwrite; without it this query fails and the catch below logs it.
         const searchTerm = query.trim();
 
         // First try exact userId match
@@ -93,7 +96,10 @@ export async function GET(request: Request) {
         });
 
         return NextResponse.json({ users });
-    } catch {
+    } catch (error) {
+        logger.error("Failed to search users", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to search users" },
             { status: 500 },

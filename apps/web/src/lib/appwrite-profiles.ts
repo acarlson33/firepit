@@ -99,6 +99,19 @@ function evictProfileCache(): void {
     }
 }
 
+function invalidateProfileCache(profileId?: string, userId?: string): void {
+    if (userId) {
+        profileCache.delete(userId);
+    }
+    if (profileId) {
+        for (const [key, entry] of profileCache) {
+            if (entry.data?.$id === profileId) {
+                profileCache.delete(key);
+            }
+        }
+    }
+}
+
 export async function getUserProfile(
     userId: string,
 ): Promise<UserProfile | null> {
@@ -240,29 +253,21 @@ export async function resolveProfileIdentifiers(identifiers: string[]) {
         const identifierChunks = chunkValues(trimmedIdentifiers, 100);
         const documents: UserProfile[] = [];
 
-        for (const chunk of identifierChunks) {
-            const [byUserId, byUserName, byDisplayName] = await Promise.all([
-                databases.listDocuments(
-                    env.databaseId,
-                    env.collections.profiles,
-                    [Query.equal("userId", chunk), Query.limit(100)],
+        const chunkResults = await Promise.all(
+            identifierChunks.flatMap((chunk) =>
+                ["userId", "userName", "displayName"].map((field) =>
+                    databases.listDocuments(
+                        env.databaseId,
+                        env.collections.profiles,
+                        [Query.equal(field, chunk), Query.limit(100)],
+                    ),
                 ),
-                databases.listDocuments(
-                    env.databaseId,
-                    env.collections.profiles,
-                    [Query.equal("userName", chunk), Query.limit(100)],
-                ),
-                databases.listDocuments(
-                    env.databaseId,
-                    env.collections.profiles,
-                    [Query.equal("displayName", chunk), Query.limit(100)],
-                ),
-            ]);
+            ),
+        );
 
+        for (const chunkResult of chunkResults) {
             documents.push(
-                ...(byUserId.documents as unknown as UserProfile[]),
-                ...(byUserName.documents as unknown as UserProfile[]),
-                ...(byDisplayName.documents as unknown as UserProfile[]),
+                ...(chunkResult.documents as unknown as UserProfile[]),
             );
         }
 
@@ -315,6 +320,7 @@ export async function createUserProfile(
         },
     );
 
+    invalidateProfileCache(undefined, userId);
     return profile as unknown as UserProfile;
 }
 
@@ -362,6 +368,7 @@ export async function updateUserProfile(
         cleanData,
     );
 
+    invalidateProfileCache(profileId);
     return profile as unknown as UserProfile;
 }
 
@@ -398,6 +405,7 @@ export async function updateProfileBackgroundImageState(
         },
     );
 
+    invalidateProfileCache(profileId);
     return profile as unknown as UserProfile;
 }
 
@@ -644,17 +652,19 @@ export async function getProfilesByUserIds(
         const { databases } = getAdminClient();
         const env = getEnvConfig();
 
-        // Appwrite Query.equal supports arrays
-        const profiles = await databases.listDocuments(
-            env.databaseId,
-            env.collections.profiles,
-            [Query.equal("userId", userIds), Query.limit(userIds.length)],
-        );
-
         const profileMap = new Map<string, UserProfile>();
-        for (const doc of profiles.documents) {
-            const profile = doc as unknown as UserProfile;
-            profileMap.set(profile.userId, profile);
+        for (const chunk of chunkValues(userIds, 100)) {
+            // Appwrite Query.equal supports arrays, but caps out at 100 values.
+            const profiles = await databases.listDocuments(
+                env.databaseId,
+                env.collections.profiles,
+                [Query.equal("userId", chunk), Query.limit(chunk.length)],
+            );
+
+            for (const doc of profiles.documents) {
+                const profile = doc as unknown as UserProfile;
+                profileMap.set(profile.userId, profile);
+            }
         }
 
         return profileMap;

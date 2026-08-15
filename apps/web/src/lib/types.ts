@@ -319,7 +319,7 @@ export type Conversation = {
         avatarUrl?: string;
         avatarFramePreset?: string;
         avatarFrameUrl?: string;
-        status?: string;
+        status?: PresenceStatus;
     };
     lastMessage?: {
         text: string;
@@ -446,10 +446,12 @@ export type DirectMessage = {
     poll?: MessagePoll;
 };
 
+export type PresenceStatus = "online" | "away" | "busy" | "offline";
+
 export type UserStatus = {
     $id: string;
     userId: string;
-    status: "online" | "away" | "busy" | "offline";
+    status: PresenceStatus;
     customMessage?: string;
     lastSeenAt: string;
     expiresAt?: string; // ISO 8601 timestamp when custom status should expire
@@ -491,7 +493,7 @@ export type UserProfileData = {
     profileBackgroundImageChangedAt?: string;
     dmEncryptionPublicKey?: string;
     status?: {
-        status: "online" | "away" | "busy" | "offline";
+        status: PresenceStatus;
         customMessage?: string;
         lastSeenAt: string;
     };

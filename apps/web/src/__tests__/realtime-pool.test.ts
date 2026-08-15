@@ -17,22 +17,24 @@ const { mockCloseSocket, mockPublicClose, mockRealtimeSubscribe } = vi.hoisted(
 );
 
 // Mock Appwrite Client
-vi.mock("appwrite", () => ({
-    Client: vi.fn().mockImplementation(() => ({
-        setEndpoint: vi.fn().mockReturnThis(),
-        setProject: vi.fn().mockReturnThis(),
-    })),
-    Realtime: vi.fn().mockImplementation(() => {
-        const instance = {
-            activeSubscriptions: new Map<number, unknown>(),
-            closeSocket: mockCloseSocket,
-            reconnect: true,
-            subscribe: mockRealtimeSubscribe,
-        };
+ vi.mock("appwrite", () => ({
+     Client: vi.fn().mockImplementation(function () {
+         return {
+             setEndpoint: vi.fn().mockReturnThis(),
+             setProject: vi.fn().mockReturnThis(),
+         };
+     }),
+     Realtime: vi.fn().mockImplementation(function () {
+         const instance = {
+             activeSubscriptions: new Map<number, unknown>(),
+             closeSocket: mockCloseSocket,
+             reconnect: true,
+             subscribe: mockRealtimeSubscribe,
+         };
 
-        return instance;
-    }),
-}));
+         return instance;
+     }),
+ }));
 
 // Mock appwrite-core to dynamically read env vars (avoiding cache issues)
 vi.mock("@/lib/appwrite-core", () => ({
@@ -388,7 +390,7 @@ describe("Realtime Pool", () => {
 
     describe("sdk compatibility", () => {
         // realtime-pool teardown still relies on SDK-specific internals
-        // (reflection and fallback cleanup assumptions). Guarding major 25.x
+        // (reflection and fallback cleanup assumptions). Guarding major 26.x
         // prevents silent breakage from upstream major changes.
         it("should keep appwrite on the expected major for realtime cleanup assumptions", () => {
             const packageJson = JSON.parse(
@@ -397,7 +399,7 @@ describe("Realtime Pool", () => {
                 dependencies?: Record<string, string>;
             };
 
-            expect(packageJson.dependencies?.appwrite).toMatch(/^\^?25\./);
+            expect(packageJson.dependencies?.appwrite).toMatch(/^\^?26\./);
         });
     });
 });

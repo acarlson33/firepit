@@ -10,6 +10,7 @@ import {
     getAvatarUrl,
     updateUserProfile,
 } from "@/lib/appwrite-profiles";
+import { logger } from "@/lib/newrelic-utils";
 
 const ALLOWED_AVATAR_TYPES = new Set([
     "image/jpeg",
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
         const uploadedFile = await storage.createFile(
             env.buckets.avatars,
             ID.unique(),
-            file,
+            InputFile.fromBuffer(file, file.name),
             [
                 Permission.read(Role.any()),
                 Permission.update(Role.user(session.$id)),
@@ -80,9 +81,20 @@ export async function POST(request: Request) {
             ],
         );
 
-        await updateUserProfile(profile.$id, {
-            avatarFileId: uploadedFile.$id,
-        });
+        try {
+            await updateUserProfile(profile.$id, {
+                avatarFileId: uploadedFile.$id,
+            });
+        } catch (error) {
+            // Roll back the uploaded file so a failed profile update does not
+            // orphan a file in storage.
+            try {
+                await deleteAvatarFile(uploadedFile.$id);
+            } catch {
+                // best-effort cleanup
+            }
+            throw error;
+        }
 
         if (previousAvatarFileId && previousAvatarFileId !== uploadedFile.$id) {
             try {
@@ -99,13 +111,11 @@ export async function POST(request: Request) {
             avatarUrl,
         });
     } catch (error) {
+        logger.error("Failed to upload avatar", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to upload avatar",
-            },
+            { error: "Failed to upload avatar" },
             { status: 500 },
         );
     }
@@ -138,13 +148,11 @@ export async function DELETE() {
 
         return NextResponse.json({ success: true });
     } catch (error) {
+        logger.error("Failed to remove avatar", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to remove avatar",
-            },
+            { error: "Failed to remove avatar" },
             { status: 500 },
         );
     }

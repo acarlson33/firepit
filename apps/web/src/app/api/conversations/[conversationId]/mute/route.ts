@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 
+import { getServerClient } from "@/lib/appwrite-server";
+import { getEnvConfig } from "@/lib/appwrite-core";
+import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { getServerSession } from "@/lib/auth-server";
 import { muteConversation, unmuteConversation } from "@/lib/notification-settings";
-import { returnUnauthorized, returnForbidden } from "@/lib/newrelic-utils";
+import { invalidateNotificationSettingsCache } from "@/lib/notification-triggers";
+import { returnUnauthorized, returnForbidden, logger } from "@/lib/newrelic-utils";
 import type { MuteDuration, NotificationLevel } from "@/lib/types";
 
 interface MuteRequestBody {
@@ -37,7 +41,46 @@ export async function POST(
 			);
 		}
 
-		const body = (await request.json()) as MuteRequestBody;
+		const env = getEnvConfig();
+		const { databases } = getServerClient();
+
+		let conversation: Record<string, unknown>;
+		try {
+			const conversationRes = await databases.getDocument(
+				env.databaseId,
+				env.collections.conversations,
+				conversationId,
+			);
+			conversation = conversationRes as unknown as Record<
+				string,
+				unknown
+			>;
+		} catch (error) {
+			if (isDocumentNotFoundError(error)) {
+				return NextResponse.json(
+					{ error: "Conversation not found" },
+					{ status: 404 },
+				);
+			}
+			throw error;
+		}
+
+		const participants = Array.isArray(conversation.participants)
+			? (conversation.participants as string[])
+			: [];
+		if (!participants.includes(user.$id)) {
+			return returnForbidden();
+		}
+
+		let body: MuteRequestBody;
+		try {
+			body = (await request.json()) as MuteRequestBody;
+		} catch {
+			return NextResponse.json(
+				{ error: "Invalid JSON" },
+				{ status: 400 }
+			);
+		}
 
 		if (typeof body.muted !== "boolean") {
 			return NextResponse.json(
@@ -71,23 +114,28 @@ export async function POST(
 			updatedSettings = await unmuteConversation(user.$id, conversationId);
 		}
 
+		invalidateNotificationSettingsCache(user.$id);
+
 		// Get the conversation override from the updated settings
 		const conversationOverride = updatedSettings.conversationOverrides?.[conversationId];
+		const mutedUntil = conversationOverride?.mutedUntil;
+		const muted =
+			mutedUntil === "forever" ||
+			(typeof mutedUntil === "string" &&
+				new Date(mutedUntil).getTime() > Date.now());
 
 		return NextResponse.json({
 			conversationId,
-			muted: !!conversationOverride,
-			mutedUntil: conversationOverride?.mutedUntil,
+			muted,
+			mutedUntil,
 			level: conversationOverride?.level,
 		});
 	} catch (error) {
+		logger.error("Failed to update conversation mute settings", {
+			error: error instanceof Error ? error.message : String(error),
+		});
 		return NextResponse.json(
-			{
-				error:
-					error instanceof Error
-						? error.message
-						: "Failed to update conversation mute settings",
-			},
+			{ error: "Failed to update conversation mute settings" },
 			{ status: 500 }
 		);
 	}

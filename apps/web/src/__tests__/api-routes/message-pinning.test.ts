@@ -127,6 +127,11 @@ describe("Message Pinning API", () => {
         });
 
         mockListDocuments
+            .mockResolvedValueOnce({
+                total: 1,
+                documents: [{ roleIds: ["role-1"] }],
+            })
+            .mockResolvedValueOnce({ total: 0, documents: [] })
             .mockResolvedValueOnce({ total: 0, documents: [] })
             .mockResolvedValueOnce({ total: 50, documents: [] });
 
@@ -158,6 +163,11 @@ describe("Message Pinning API", () => {
         });
 
         mockListDocuments
+            .mockResolvedValueOnce({
+                total: 1,
+                documents: [{ roleIds: ["role-1"] }],
+            })
+            .mockResolvedValueOnce({ total: 0, documents: [] })
             .mockResolvedValueOnce({ total: 0, documents: [] })
             .mockResolvedValueOnce({ total: 0, documents: [] });
 
@@ -195,10 +205,13 @@ describe("Message Pinning API", () => {
             serverId: "server-1",
         });
 
-        mockListDocuments.mockResolvedValue({
-            total: 1,
-            documents: [{ $id: "pin-1" }],
-        });
+        mockListDocuments
+            .mockResolvedValueOnce({
+                total: 1,
+                documents: [{ roleIds: ["role-1"] }],
+            })
+            .mockResolvedValueOnce({ total: 0, documents: [] })
+            .mockResolvedValue({ total: 1, documents: [{ $id: "pin-1" }] });
 
         const { DELETE } =
             await import("../../app/api/messages/[messageId]/pin/route");

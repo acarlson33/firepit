@@ -11,7 +11,7 @@ import {
     Users,
 } from "lucide-react";
 
-import { getUserRoleTags } from "@/lib/appwrite-roles";
+import { getCachedUserRoleTags } from "@/lib/cached-data";
 import { getServerSession } from "@/lib/auth-server";
 import { Button } from "@/components/ui/button";
 import {
@@ -140,7 +140,7 @@ function WorkspaceActionButton({
 
 export default async function Home() {
     const user = await getServerSession();
-    const roles = user ? await getUserRoleTags(user.$id) : null;
+    const roles = user ? await getCachedUserRoleTags(user.$id) : null;
 
     if (!user) {
         return (

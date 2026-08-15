@@ -1,5 +1,6 @@
 import type { DirectMessage, Message, PinnedMessage } from "@/lib/types";
 
+import { parseJsonResponse } from "@/lib/parse-json-response";
 import type {
     PinItem,
     PinnableMessage,
@@ -53,20 +54,6 @@ const pinsSurfaceConfig = {
         listPinsError: "Failed to fetch conversation pins",
     },
 } as const;
-
-async function parseJsonResponse<T>(
-    response: Response,
-    fallbackMessage: string,
-): Promise<T> {
-    if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as {
-            error?: string;
-        } | null;
-        throw new Error(data?.error || fallbackMessage);
-    }
-
-    return response.json() as Promise<T>;
-}
 
 /**
  * Lists replies for a channel thread parent message.
@@ -140,13 +127,11 @@ export async function createThreadReply<TMessage>(
             body: JSON.stringify(payload),
         },
     );
-    const data = await parseJsonResponse<{ message: TMessage }>(
+    const data = await parseJsonResponse<CreateThreadReplyResponse<TMessage>>(
         response,
         config.createThreadError,
     );
-    const message =
-        (data as CreateThreadReplyResponse<TMessage>).message ??
-        (data as CreateThreadReplyResponse<TMessage>).reply;
+    const message = data.message ?? data.reply;
 
     if (!message) {
         throw new Error(config.createThreadError);
@@ -257,6 +242,10 @@ export async function pinMessage(
         response,
         config.pinError,
     );
+    if (!data.pin) {
+        throw new Error(config.pinError);
+    }
+
     return data.pin;
 }
 
@@ -293,5 +282,6 @@ export async function listPins<TMessage extends PinnableMessage>(
         response,
         config.listPinsError,
     );
-    return data.items;
+
+    return Array.isArray(data.items) ? data.items : [];
 }

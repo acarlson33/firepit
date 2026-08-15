@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminListAuditEvents } from "@/lib/appwrite-audit";
+import { clampLimit } from "@/lib/appwrite-reports";
 import {
     getProfilesByUserIds,
 } from "@/lib/appwrite-profiles";
@@ -8,33 +9,23 @@ import { requireModerator } from "@/lib/auth-server";
 
 export async function GET(request: Request) {
     try {
-        const { user } = await requireModerator();
+        await requireModerator();
 
         const { searchParams } = new URL(request.url);
-        const limit = Number.parseInt(searchParams.get("limit") || "50", 10);
-        const cursor =
-            typeof searchParams.get("cursor") === "string"
-                ? searchParams.get("cursor")
-                : undefined;
-        const action =
-            typeof searchParams.get("action") === "string"
-                ? searchParams.get("action")
-                : undefined;
-        const actorId =
-            typeof searchParams.get("actorId") === "string"
-                ? searchParams.get("actorId")
-                : undefined;
-        const targetId =
-            typeof searchParams.get("targetId") === "string"
-                ? searchParams.get("targetId")
-                : undefined;
+        const readParam = (key: string): string | undefined =>
+            searchParams.get(key)?.trim() || undefined;
+        const limit = clampLimit(searchParams.get("limit"));
+        const cursor = readParam("cursor");
+        const action = readParam("action");
+        const actorId = readParam("actorId");
+        const targetId = readParam("targetId");
 
         const { items, nextCursor } = await adminListAuditEvents({
             limit,
-            cursorAfter: cursor ?? undefined,
-            action: action ?? undefined,
-            actorId: actorId ?? undefined,
-            targetId: targetId ?? undefined,
+            cursorAfter: cursor,
+            action,
+            actorId,
+            targetId,
         });
 
         // Enrich with profile data
@@ -86,11 +77,13 @@ export async function GET(request: Request) {
             nextCursor,
         });
     } catch (error) {
-        if (
-            error instanceof Error &&
-            (error.message === "UNAUTHORIZED" ||
-                error.message === "FORBIDDEN")
-        ) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+            return NextResponse.json(
+                { error: "Unauthorized" },
+                { status: 401 },
+            );
+        }
+        if (error instanceof Error && error.message === "FORBIDDEN") {
             return NextResponse.json(
                 { error: "Forbidden: Moderator access required" },
                 { status: 403 },

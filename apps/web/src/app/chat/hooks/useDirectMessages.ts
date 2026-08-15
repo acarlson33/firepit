@@ -1232,6 +1232,7 @@ export function useDirectMessages({
                         const senderKeyPair =
                             await ensurePublishedDmEncryptionKey(userId);
                         encryptionPayload = await encryptDmText({
+                            context: conversationId,
                             recipientPublicKeyBase64:
                                 dmEncryptionPeerPublicKey,
                             senderKeyPair,

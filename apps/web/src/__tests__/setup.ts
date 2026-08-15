@@ -64,10 +64,12 @@ if (process.env.VITEST || process.env.VITEST_WORKER_ID) {
         },
         Permission,
         Role,
-        Client: vi.fn(() => ({
-            setEndpoint: vi.fn().mockReturnThis(),
-            setProject: vi.fn().mockReturnThis(),
-        })),
+        Client: vi.fn(function () {
+            return {
+                setEndpoint: vi.fn().mockReturnThis(),
+                setProject: vi.fn().mockReturnThis(),
+            };
+        }),
         Account: vi.fn(),
         Databases: vi.fn(),
         Storage: vi.fn(),
@@ -93,37 +95,54 @@ if (process.env.VITEST || process.env.VITEST_WORKER_ID) {
                 toString: () => "files",
             }),
         },
-            Realtime: vi.fn().mockImplementation(() => ({
-            activeSubscriptions: new Map(),
-            closeSocket: vi.fn().mockResolvedValue(undefined),
-            reconnect: false,
-            subscribe: vi.fn().mockResolvedValue({
-                close: vi.fn().mockResolvedValue(undefined),
-                // Support newer subscription lifecycle methods used by refactor
-                update: vi.fn().mockResolvedValue(undefined),
-                disconnect: vi.fn().mockResolvedValue(undefined),
+            Realtime: vi.fn().mockImplementation(function () {
+                return {
+                    activeSubscriptions: new Map(),
+                    closeSocket: vi.fn().mockResolvedValue(undefined),
+                    reconnect: false,
+                    subscribe: vi.fn().mockResolvedValue({
+                        close: vi.fn().mockResolvedValue(undefined),
+                        // Support newer subscription lifecycle methods used by refactor
+                        update: vi.fn().mockResolvedValue(undefined),
+                        disconnect: vi.fn().mockResolvedValue(undefined),
+                    }),
+                    close: vi.fn().mockResolvedValue(undefined),
+                    unsubscribe: vi.fn().mockResolvedValue(undefined),
+                };
             }),
-            close: vi.fn().mockResolvedValue(undefined),
-            unsubscribe: vi.fn().mockResolvedValue(undefined),
-        })),
     }));
+
+    // Mock next/cache to keep cacheLife() a no-op in tests (no SWC transform
+    // means no "use cache" work-unit store). Preserve other exports so
+    // feature-flags (unstable_cache/revalidateTag) keeps working.
+    vi.mock("next/cache", async (importOriginal) => {
+        const mod = await importOriginal<typeof import("next/cache")>();
+        return { ...mod, cacheLife: vi.fn() };
+    });
+
+    // server-only throws outside a Server Component; mock it in tests.
+    vi.mock("server-only", () => ({}));
 
     // Mock node-appwrite to prevent import errors
     vi.mock("node-appwrite", () => ({
-        Client: vi.fn(() => ({
-            setEndpoint: vi.fn().mockReturnThis(),
-            setProject: vi.fn().mockReturnThis(),
-            setKey: vi.fn().mockReturnThis(),
-        })),
+        Client: vi.fn(function () {
+            return {
+                setEndpoint: vi.fn().mockReturnThis(),
+                setProject: vi.fn().mockReturnThis(),
+                setKey: vi.fn().mockReturnThis(),
+            };
+        }),
         Databases: vi.fn(),
-        TablesDB: vi.fn(() => ({
-            createTransaction: vi.fn().mockResolvedValue({ $id: "mock-tx-id" }),
-            getRow: vi
-                .fn()
-                .mockResolvedValue({ $id: "mock-row", status: "pending" }),
-            updateRow: vi.fn().mockResolvedValue({}),
-            updateTransaction: vi.fn().mockResolvedValue({}),
-        })),
+        TablesDB: vi.fn(function () {
+            return {
+                createTransaction: vi.fn().mockResolvedValue({ $id: "mock-tx-id" }),
+                getRow: vi
+                    .fn()
+                    .mockResolvedValue({ $id: "mock-row", status: "pending" }),
+                updateRow: vi.fn().mockResolvedValue({}),
+                updateTransaction: vi.fn().mockResolvedValue({}),
+            };
+        }),
         Storage: vi.fn(),
         Teams: vi.fn(),
         AppwriteException: class AppwriteException extends Error {

@@ -7,16 +7,18 @@ import { logger,
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import { fetchAuditLogs } from "@/lib/audit-log-query";
 
-interface AuditLog {
-    timestamp: string;
-    action: string;
-    moderatorId: string;
-    moderatorName?: string;
-    targetUserId?: string;
-    targetUserName?: string;
-    reason?: string;
-    details?: string;
+const FORMULA_PREFIXES = ["=", "+", "-", "@", "\t", "\r"];
+
+function toSafeCsvCell(value: unknown): string {
+    const text = String(value ?? "");
+    const guarded = FORMULA_PREFIXES.some((prefix) =>
+        text.startsWith(prefix),
+    )
+        ? `'${text}`
+        : text;
+    return `"${guarded.replace(/"/g, '""')}"`;
 }
 
 export async function GET(
@@ -50,22 +52,14 @@ export async function GET(
         const { searchParams } = new URL(request.url);
         const format = searchParams.get("format") || "json";
 
-        // Fetch audit logs from the regular endpoint
-        const logsResponse = await fetch(
-            `${request.url.split("/export")[0]}?limit=1000`,
-            {
-                headers: request.headers,
-            },
-        );
-
-        if (!logsResponse.ok) {
-            return NextResponse.json(
-                { error: "Failed to fetch audit logs" },
-                { status: 500 },
-            );
-        }
-
-        const logs = await logsResponse.json();
+        const logs = await fetchAuditLogs({
+            databases,
+            databaseId: env.databaseId,
+            auditCollectionId: env.collections.audit,
+            profilesCollectionId: env.collections.profiles,
+            serverId,
+            limit: 1000,
+        });
 
         if (format === "csv") {
             // Generate CSV
@@ -79,7 +73,7 @@ export async function GET(
                 "Reason",
                 "Details",
             ];
-            const rows = (logs as AuditLog[]).map((log) => [
+            const rows = logs.map((log) => [
                 log.timestamp,
                 log.action,
                 log.moderatorId,
@@ -92,10 +86,8 @@ export async function GET(
 
             const csvContent = [
                 headers.join(","),
-                ...rows.map((row: string[]) =>
-                    row
-                        .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
-                        .join(","),
+                ...rows.map((row) =>
+                    row.map((cell) => toSafeCsvCell(cell)).join(","),
                 ),
             ].join("\n");
 

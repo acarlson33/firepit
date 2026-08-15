@@ -4,6 +4,7 @@ import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
 import { getAdminClient } from "./appwrite-admin";
 import { getFeatureFlag, FEATURE_FLAGS } from "./feature-flags";
+import { logger } from "./newrelic-utils";
 
 /**
  * Returns databases.
@@ -146,6 +147,11 @@ export async function recordAudit(
         meta: serializedMeta,
     };
 
+    const adminTeamId = env.teams.adminTeamId;
+    const auditPermissions = adminTeamId
+        ? [`read("team:${adminTeamId}")`]
+        : [];
+
     try {
         const { databases } = getServerClient();
         try {
@@ -154,19 +160,26 @@ export async function recordAudit(
                 AUDIT_COLLECTION_ID,
                 ID.unique(),
                 auditData,
-                ['read("any")'],
+                auditPermissions,
             );
-        } catch {
+        } catch (error) {
+            logger.warn("Audit log write failed, falling back to minimal payload", {
+                action,
+                error: error instanceof Error ? error.message : String(error),
+            });
             await databases.createDocument(
                 DATABASE_ID,
                 AUDIT_COLLECTION_ID,
                 ID.unique(),
                 fallbackAuditData,
-                ['read("any")'],
+                auditPermissions,
             );
         }
-    } catch {
-        // ignore audit failures
+    } catch (error) {
+        logger.warn("Audit write failed", {
+            action,
+            error: error instanceof Error ? error.message : String(error),
+        });
     }
 }
 

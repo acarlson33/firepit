@@ -30,11 +30,11 @@ function formatFriendshipDate(
 ): string {
     switch (kind) {
         case "friends":
-            return `Friends since ${new Date(friendship.respondedAt ?? friendship.createdAt).toLocaleDateString()}`;
+            return `Friends since ${new Date(friendship.respondedAt ?? friendship.requestedAt).toLocaleDateString()}`;
         case "incoming":
-            return `Requested ${new Date(friendship.createdAt).toLocaleDateString()}`;
+            return `Requested ${new Date(friendship.requestedAt).toLocaleDateString()}`;
         case "outgoing":
-            return `Sent ${new Date(friendship.createdAt).toLocaleDateString()}`;
+            return `Sent ${new Date(friendship.requestedAt).toLocaleDateString()}`;
     }
 }
 

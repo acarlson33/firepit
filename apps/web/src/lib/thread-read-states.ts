@@ -22,13 +22,17 @@ export function normalizeThreadReads(value: unknown): Record<string, string> {
               })()
             : value;
 
-    if (!candidate || typeof candidate !== "object") {
+    if (
+        !candidate ||
+        typeof candidate !== "object" ||
+        Array.isArray(candidate)
+    ) {
         return {};
     }
 
     return Object.entries(candidate).reduce<Record<string, string>>(
         (accumulator, [messageId, readAt]) => {
-            if (typeof messageId === "string" && typeof readAt === "string") {
+            if (typeof readAt === "string") {
                 accumulator[messageId] = readAt;
             }
 
@@ -59,5 +63,5 @@ export function isThreadUnread(params: {
         return true;
     }
 
-    return lastReadAt.localeCompare(lastThreadReplyAt) < 0;
+    return lastReadAt < lastThreadReplyAt;
 }

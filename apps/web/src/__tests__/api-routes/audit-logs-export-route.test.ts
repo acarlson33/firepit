@@ -1,9 +1,12 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
 const { mockSession } = vi.hoisted(() => ({ mockSession: vi.fn() }));
 const { mockGetServerPermissionsForUser } = vi.hoisted(() => ({
     mockGetServerPermissionsForUser: vi.fn(),
+}));
+const { mockListDocuments } = vi.hoisted(() => ({
+    mockListDocuments: vi.fn(),
 }));
 
 vi.mock("@/lib/auth-server", () => ({ getServerSession: mockSession }));
@@ -14,7 +17,9 @@ vi.mock("@/lib/server-channel-access", () => ({
 
 vi.mock("@/lib/appwrite-server", () => ({
     getServerClient: vi.fn(() => ({
-        databases: {},
+        databases: {
+            listDocuments: mockListDocuments,
+        },
     })),
 }));
 
@@ -26,6 +31,8 @@ vi.mock("@/lib/appwrite-core", () => ({
             memberships: "memberships",
             roles: "roles",
             channels: "channels",
+            audit: "audit",
+            profiles: "profiles",
         },
     })),
 }));
@@ -41,10 +48,26 @@ describe("audit logs export route", () => {
     beforeEach(() => {
         mockSession.mockReset();
         mockGetServerPermissionsForUser.mockReset();
-        global.fetch = vi.fn();
+        mockListDocuments.mockReset();
+        mockSession.mockResolvedValue({ $id: "user-1" });
         mockGetServerPermissionsForUser.mockResolvedValue({
             isMember: true,
             permissions: { manageServer: true },
+        });
+        mockListDocuments.mockResolvedValue({
+            documents: [
+                {
+                    $id: "log-1",
+                    $createdAt: "t1",
+                    action: "ban",
+                    userId: "mod-1",
+                    targetUserId: "user-1",
+                    moderatorName: "Mod",
+                    targetUserName: "Target",
+                    reason: "rule",
+                    details: "details",
+                },
+            ],
         });
     });
 
@@ -67,14 +90,6 @@ describe("audit logs export route", () => {
     });
 
     it("returns JSON export by default", async () => {
-        mockSession.mockResolvedValue({ $id: "user-1" });
-        (global.fetch as unknown as Mock).mockResolvedValue({
-            ok: true,
-            json: async () => [
-                { timestamp: "t", action: "ban", moderatorId: "mod-1" },
-            ],
-        });
-
         const { GET } = await loadRoute();
         const response = await GET(
             new NextRequest(
@@ -115,23 +130,6 @@ describe("audit logs export route", () => {
     });
 
     it("returns CSV when requested", async () => {
-        mockSession.mockResolvedValue({ $id: "user-1" });
-        (global.fetch as unknown as Mock).mockResolvedValue({
-            ok: true,
-            json: async () => [
-                {
-                    timestamp: "t1",
-                    action: "ban",
-                    moderatorId: "mod-1",
-                    moderatorName: "Mod",
-                    targetUserId: "user-1",
-                    targetUserName: "Target",
-                    reason: "rule",
-                    details: "details",
-                },
-            ],
-        });
-
         const { GET } = await loadRoute();
         const response = await GET(
             new NextRequest(
@@ -148,9 +146,8 @@ describe("audit logs export route", () => {
         expect(text).toContain("ban");
     });
 
-    it("returns 500 when upstream fetch fails", async () => {
-        mockSession.mockResolvedValue({ $id: "user-1" });
-        (global.fetch as unknown as Mock).mockResolvedValue({ ok: false });
+    it("returns 500 when the audit log query fails", async () => {
+        mockListDocuments.mockRejectedValue(new Error("db down"));
 
         const { GET } = await loadRoute();
         const response = await GET(
@@ -164,6 +161,6 @@ describe("audit logs export route", () => {
 
         const data = await response.json();
         expect(response.status).toBe(500);
-        expect(data.error).toBe("Failed to fetch audit logs");
+        expect(data.error).toBe("Failed to export audit logs");
     });
 });

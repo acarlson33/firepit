@@ -25,11 +25,23 @@ const instrumentationLogger = {
 
 export async function register() {
     if (process.env.NEXT_RUNTIME === "nodejs") {
+        const newrelicLicenseKey = process.env.NEW_RELIC_LICENSE_KEY;
+        const newrelicAppName = process.env.NEW_RELIC_APP_NAME;
+
         try {
-            const { registerPostHogLoggerProvider, registerPostHogProcessHandlers } =
-                await import("./src/lib/newrelic-utils");
+            const {
+                initNewRelic,
+                registerPostHogLoggerProvider,
+                registerPostHogProcessHandlers,
+            } = await import("./src/lib/newrelic-utils");
             registerPostHogLoggerProvider();
             registerPostHogProcessHandlers();
+
+            // Kick off New Relic initialization once at startup so sync
+            // dispatch paths can use the agent without async triggers.
+            if (newrelicLicenseKey && newrelicAppName) {
+                await initNewRelic();
+            }
         } catch (error) {
             // PostHog runtime hooks are optional and should not block startup.
             instrumentationLogger.error(
@@ -46,9 +58,6 @@ export async function register() {
                 },
             );
         }
-
-        const newrelicLicenseKey = process.env.NEW_RELIC_LICENSE_KEY;
-        const newrelicAppName = process.env.NEW_RELIC_APP_NAME;
 
         // Only initialize if both license key and app name are provided
         if (newrelicLicenseKey && newrelicAppName) {

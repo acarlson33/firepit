@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
 import { getOrCreateUserProfile, updateUserProfile } from "@/lib/appwrite-profiles";
-import { logger,
-    returnUnauthorized,
-    returnForbidden,
-} from "@/lib/newrelic-utils";
+import { logger, returnUnauthorized } from "@/lib/newrelic-utils";
 
 type PatchBody = {
     dmEncryptionPublicKey: string;
@@ -94,13 +91,15 @@ export async function PATCH(request: Request) {
         }
 
         const dmEncryptionPublicKey = body.dmEncryptionPublicKey;
-        const decodedPublicKey = decodeBase64ToBytes(dmEncryptionPublicKey);
+        const hasValidShape =
+            dmEncryptionPublicKey.length > 0 &&
+            dmEncryptionPublicKey.length <= PUBLIC_KEY_MAX_LENGTH &&
+            isLikelyBase64(dmEncryptionPublicKey);
+        const decodedPublicKey = hasValidShape
+            ? decodeBase64ToBytes(dmEncryptionPublicKey)
+            : null;
 
         if (
-            typeof dmEncryptionPublicKey !== "string" ||
-            dmEncryptionPublicKey.length === 0 ||
-            dmEncryptionPublicKey.length > PUBLIC_KEY_MAX_LENGTH ||
-            !isLikelyBase64(dmEncryptionPublicKey) ||
             !decodedPublicKey ||
             decodedPublicKey.length !== PUBLIC_KEY_BYTE_LENGTH
         ) {

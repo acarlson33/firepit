@@ -11,7 +11,11 @@ import {
     getNotificationSettings,
 } from "@/lib/notification-settings";
 import { getChannelAccessForUser } from "@/lib/server-channel-access";
-import { listThreadReadsByContext } from "@/lib/thread-read-store";
+import {
+    CONCURRENT_DOCUMENT_QUERIES,
+    listThreadReadsByContext,
+    runInBatches,
+} from "@/lib/thread-read-store";
 import { isThreadUnread } from "@/lib/thread-read-states";
 import type {
     DirectMessage,
@@ -127,7 +131,6 @@ type InboxRequestCaches = {
 };
 
 const DOCUMENT_QUERY_CHUNK_SIZE = 100;
-const CONCURRENT_DOCUMENT_QUERIES = 4;
 const RELATIONSHIP_QUERY_CHUNK_SIZE = 100;
 
 function selectQuery(fields: readonly string[]) {
@@ -186,10 +189,10 @@ function buildThreadParentSnapshot(params: {
         typeof document.lastThreadReplyAt === "string"
             ? document.lastThreadReplyAt
             : undefined;
-    const effectiveLastReplyAt = maxIsoTimestamp(
-        metadataLastReplyAt,
-        signal?.latestReplyAt,
-    );
+    // The stored lastThreadReplyAt is updated on every reply, so it is the
+    // authoritative activity signal. Reply-document scanning fills the gaps
+    // (parents missed by the parent query or created before the field existed).
+    const effectiveLastReplyAt = metadataLastReplyAt ?? signal?.latestReplyAt;
 
     const metadataThreadCount =
         typeof document.threadMessageCount === "number"
@@ -261,37 +264,6 @@ function sortInboxItems(items: InboxItem[]) {
     });
 }
 
-async function runInBatches<T>(params: {
-    batchSize: number;
-    items: T[];
-    worker: (item: T) => Promise<void>;
-}) {
-    const { batchSize, items, worker } = params;
-    if (items.length === 0 || batchSize <= 0) {
-        return;
-    }
-
-    const batches: T[][] = [];
-    let startIndex = 0;
-
-    while (startIndex < items.length) {
-        batches.push(items.slice(startIndex, startIndex + batchSize));
-        startIndex += batchSize;
-    }
-
-    const runSequentially = batches.reduce<Promise<void>>(
-        (previousPromise, batch) =>
-            previousPromise.then(() =>
-                Promise.all(batch.map((item) => worker(item))).then(() => {
-                    return;
-                }),
-            ),
-        Promise.resolve(),
-    );
-
-    return runSequentially;
-}
-
 /**
  * Lists all documents for a collection using cursor pagination.
  *
@@ -361,42 +333,7 @@ async function callListDocumentsLocal(params: {
 }) {
     const { databases, databaseId, collectionId, queries } = params;
 
-    // Handle Appwrite SDK signature differences between runtime versions and Vitest mocks.
-    try {
-        return await databases.listDocuments(databaseId, collectionId, queries);
-    } catch (error) {
-        const message = getErrorMessage(error);
-        const signatureMismatchPhrases = [
-            "invalid argument",
-            "invalid arguments",
-            "unexpected argument",
-            "expected 3 arguments",
-            "too many arguments",
-            "signature",
-        ];
-
-        if (!signatureMismatchPhrases.some((phrase) => message.includes(phrase))) {
-            throw error;
-        }
-
-        return databases.listDocuments({
-            databaseId,
-            collectionId,
-            queries,
-        });
-    }
-}
-
-function getErrorMessage(error: unknown): string {
-    if (error instanceof Error) {
-        return error.message.toLowerCase();
-    }
-
-    if (typeof error === "string") {
-        return error.toLowerCase();
-    }
-
-    return "";
+    return databases.listDocuments(databaseId, collectionId, queries);
 }
 
 async function listDocumentsByIds(params: {
@@ -538,6 +475,9 @@ async function listThreadReplySignals(params: {
         contextField === "channelId"
             ? INBOX_CHANNEL_THREAD_REPLY_SIGNAL_SELECT_FIELDS
             : INBOX_CONVERSATION_THREAD_REPLY_SIGNAL_SELECT_FIELDS;
+    const sevenDaysAgo = new Date(
+        Date.now() - 7 * 24 * 60 * 60 * 1000,
+    ).toISOString();
 
     const responses: Array<{
         documents: Record<string, unknown>[];
@@ -553,6 +493,7 @@ async function listThreadReplySignals(params: {
                     queries: [
                         Query.equal(contextField, contextIdChunk),
                         Query.isNotNull("threadId"),
+                        Query.greaterThan("$createdAt", sevenDaysAgo),
                     ],
                     selectFields,
                 }),
@@ -579,12 +520,16 @@ async function listRecentThreadReplySignals(
 ) {
     const env = getEnvConfig();
     const { databases } = getServerClient();
+    const sevenDaysAgo = new Date(
+        Date.now() - 7 * 24 * 60 * 60 * 1000,
+    ).toISOString();
     const response = await listPages({
         databases,
         databaseId: env.databaseId,
         collectionId,
         baseQueries: [
             Query.isNotNull("threadId"),
+            Query.greaterThan("$createdAt", sevenDaysAgo),
             Query.orderDesc("$createdAt"),
             ...selectQuery(selectFields),
         ],
@@ -753,46 +698,47 @@ async function loadAuthorProfiles(
 
     const env = getEnvConfig();
     const { databases } = getServerClient();
-    for (const userIdChunk of chunkArray(
-        uncachedUserIds,
-        DOCUMENT_QUERY_CHUNK_SIZE,
-    )) {
-        const response = await callListDocumentsLocal({
-            databases,
-            databaseId: env.databaseId,
-            collectionId: env.collections.profiles,
-            queries: [
-                Query.equal("userId", userIdChunk),
-                Query.limit(userIdChunk.length),
-                ...selectQuery(PROFILE_SELECT_FIELDS),
-            ],
-        });
+    await runInBatches({
+        batchSize: CONCURRENT_DOCUMENT_QUERIES,
+        items: chunkArray(uncachedUserIds, DOCUMENT_QUERY_CHUNK_SIZE),
+        worker: async (userIdChunk) => {
+            const response = await callListDocumentsLocal({
+                databases,
+                databaseId: env.databaseId,
+                collectionId: env.collections.profiles,
+                queries: [
+                    Query.equal("userId", userIdChunk),
+                    Query.limit(userIdChunk.length),
+                    ...selectQuery(PROFILE_SELECT_FIELDS),
+                ],
+            });
 
-        const fetchedUserIds = new Set<string>();
-        for (const document of response.documents) {
-            const userId = String(document.userId);
-            fetchedUserIds.add(userId);
-            const profile: AuthorProfile = {
-                avatarUrl:
-                    typeof document.avatarFileId === "string"
-                        ? getAvatarUrl(document.avatarFileId)
-                        : undefined,
-                displayName:
-                    typeof document.displayName === "string"
-                        ? document.displayName
-                        : undefined,
-            };
+            const fetchedUserIds = new Set<string>();
+            for (const document of response.documents) {
+                const userId = String(document.userId);
+                fetchedUserIds.add(userId);
+                const profile: AuthorProfile = {
+                    avatarUrl:
+                        typeof document.avatarFileId === "string"
+                            ? getAvatarUrl(document.avatarFileId)
+                            : undefined,
+                    displayName:
+                        typeof document.displayName === "string"
+                            ? document.displayName
+                            : undefined,
+                };
 
-            profileMap.set(userId, profile);
-            cache?.authorProfileCache.set(userId, profile);
-        }
-
-        for (const userId of userIdChunk) {
-            if (!fetchedUserIds.has(userId)) {
-                cache?.missingAuthorProfileIds.add(userId);
+                profileMap.set(userId, profile);
+                cache?.authorProfileCache.set(userId, profile);
             }
-        }
-    }
+
+            for (const userId of userIdChunk) {
+                if (!fetchedUserIds.has(userId)) {
+                    cache?.missingAuthorProfileIds.add(userId);
+                }
+            }
+        },
+    });
 
     return profileMap;
 }
@@ -1228,7 +1174,9 @@ async function listUnreadChannelThreadItems(
     }
 
     const recentSignals = await recentSignalsPromise;
-    const channelSignals = channelSignalsPromise ? await channelSignalsPromise : new Map();
+    const channelSignals = channelSignalsPromise
+        ? await channelSignalsPromise
+        : new Map<string, ThreadReplySignal>();
 
     // Merge maps: channel-specific signals take precedence over recent/global ones
     const replySignalsByParentId = new Map<string, ThreadReplySignal>(recentSignals);
@@ -1685,6 +1633,9 @@ export async function listInboxDigest(params: {
         ? Number.POSITIVE_INFINITY
         : Math.max(1, limit);
     const inbox = await listInboxItems({
+        ...(isContextScoped && contextKind
+            ? { contextKinds: [contextKind] }
+            : {}),
         kinds: ["message", "mention", "thread"],
         limit: upstreamLimit,
         userId,

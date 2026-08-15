@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 
 import { logger } from "./newrelic-utils";
@@ -175,7 +176,7 @@ function isTrustedProxyRequest(request: Request): boolean {
     return peerIp ? TRUSTED_PROXIES.has(peerIp) : false;
 }
 
-function getClientIp(request: Request): string | null {
+export function getClientIp(request: Request): string | null {
     const trustedProxy = isTrustedProxyRequest(request);
 
     if (trustedProxy) {
@@ -288,14 +289,7 @@ function normalizeHeaderValue(value: string | null): string {
 }
 
 function hashIdentifier(value: string): string {
-    let hash = 5381;
-
-    for (const char of value) {
-        const codePoint = char.codePointAt(0) ?? 0;
-        hash = hash * 33 + codePoint;
-    }
-
-    return Math.abs(hash).toString(36);
+    return createHash("sha256").update(value).digest("hex").slice(0, 32);
 }
 
 function readCookieValue(cookieHeader: string | null, name: string): string {
@@ -323,7 +317,12 @@ function resolveFallbackIdentifier(request: Request, scope: string): string {
         return `bearer:${hashIdentifier(authorization.slice(7))}`;
     }
 
-    const projectId = process.env.APPWRITE_PROJECT_ID?.trim();
+    // Mirror getEnvConfig()'s project resolution so the cookie name matches
+    // auth-server.ts without pulling appwrite-core into the edge middleware.
+    const projectId =
+        process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID?.trim() ||
+        process.env.APPWRITE_PROJECT_ID?.trim() ||
+        process.env.APPWRITE_PROJECT?.trim();
     if (projectId) {
         const cookieName = `a_session_${projectId}`;
         const cookieValue = readCookieValue(

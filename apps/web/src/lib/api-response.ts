@@ -60,7 +60,7 @@ export function unauthorized(
 	request?: Request,
 ): NextResponse<ApiErrorResponse> {
 	return createApiError("UNAUTHORIZED", message, {
-		requestId: request ? getRequestIdFromRequest(request) : undefined,
+		requestId: getRequestIdFromRequest(request),
 	});
 }
 
@@ -69,7 +69,7 @@ export function forbidden(
 	request?: Request,
 ): NextResponse<ApiErrorResponse> {
 	return createApiError("FORBIDDEN", message, {
-		requestId: request ? getRequestIdFromRequest(request) : undefined,
+		requestId: getRequestIdFromRequest(request),
 	});
 }
 
@@ -78,7 +78,7 @@ export function notFound(
 	request?: Request,
 ): NextResponse<ApiErrorResponse> {
 	return createApiError("NOT_FOUND", message, {
-		requestId: request ? getRequestIdFromRequest(request) : undefined,
+		requestId: getRequestIdFromRequest(request),
 	});
 }
 
@@ -87,7 +87,7 @@ export function badRequest(
 	request?: Request,
 ): NextResponse<ApiErrorResponse> {
 	return createApiError("BAD_REQUEST", message, {
-		requestId: request ? getRequestIdFromRequest(request) : undefined,
+		requestId: getRequestIdFromRequest(request),
 	});
 }
 
@@ -97,7 +97,7 @@ export function validationError(
 ): NextResponse<ApiErrorResponse> {
 	return createApiError("VALIDATION_ERROR", "Validation failed", {
 		details: errors,
-		requestId: request ? getRequestIdFromRequest(request) : undefined,
+		requestId: getRequestIdFromRequest(request),
 	});
 }
 
@@ -106,7 +106,7 @@ export function conflict(
 	request?: Request,
 ): NextResponse<ApiErrorResponse> {
 	return createApiError("CONFLICT", message, {
-		requestId: request ? getRequestIdFromRequest(request) : undefined,
+		requestId: getRequestIdFromRequest(request),
 	});
 }
 
@@ -115,7 +115,7 @@ export function gone(
 	request?: Request,
 ): NextResponse<ApiErrorResponse> {
 	return createApiError("GONE", message, {
-		requestId: request ? getRequestIdFromRequest(request) : undefined,
+		requestId: getRequestIdFromRequest(request),
 	});
 }
 
@@ -124,7 +124,7 @@ export function internalError(
 	request?: Request,
 ): NextResponse<ApiErrorResponse> {
 	return createApiError("INTERNAL_ERROR", message, {
-		requestId: request ? getRequestIdFromRequest(request) : undefined,
+		requestId: getRequestIdFromRequest(request),
 	});
 }
 

@@ -9,12 +9,21 @@ import type {
     NavigationItemPreferenceId,
     NavigationPreferences,
 } from "@/lib/types";
+import { logger } from "@/lib/newrelic-utils";
 
 const DEFAULT_NAVIGATION_ITEM_ORDER = [
     "docs",
     "friends",
     "settings",
 ] as const satisfies NavigationItemPreferenceId[];
+
+const BOOLEAN_PREFERENCE_FIELDS = [
+    "showDocsInNavigation",
+    "showFriendsInNavigation",
+    "showSettingsInNavigation",
+    "showAddFriendInHeader",
+    "telemetryEnabled",
+] as const satisfies readonly (keyof NavigationPreferences)[];
 
 type PreferencesResponse = NavigationPreferences;
 
@@ -28,6 +37,16 @@ type ProfilePreferencesShape = {
     telemetryEnabled?: boolean;
     navigationItemOrder?: NavigationItemPreferenceId[] | string;
 };
+
+const SUPPORTED_NAVIGATION_ITEMS: ReadonlySet<string> = new Set(
+    DEFAULT_NAVIGATION_ITEM_ORDER,
+);
+
+function isSupportedNavigationItem(
+    value: unknown,
+): value is NavigationItemPreferenceId {
+    return typeof value === "string" && SUPPORTED_NAVIGATION_ITEMS.has(value);
+}
 
 function parseNavigationItemOrder(
     order: NavigationItemPreferenceId[] | string | undefined,
@@ -49,13 +68,7 @@ function parseNavigationItemOrder(
         try {
             const parsedOrder = JSON.parse(trimmedOrder) as unknown;
             return Array.isArray(parsedOrder)
-                ? parsedOrder.filter(
-                      (item): item is NavigationItemPreferenceId =>
-                          typeof item === "string" &&
-                          DEFAULT_NAVIGATION_ITEM_ORDER.includes(
-                              item as NavigationItemPreferenceId,
-                          ),
-                  )
+                ? parsedOrder.filter(isSupportedNavigationItem)
                 : undefined;
         } catch {
             return undefined;
@@ -65,11 +78,7 @@ function parseNavigationItemOrder(
     return trimmedOrder
         .split(",")
         .map((item) => item.trim())
-        .filter((item): item is NavigationItemPreferenceId =>
-            DEFAULT_NAVIGATION_ITEM_ORDER.includes(
-                item as NavigationItemPreferenceId,
-            ),
-        );
+        .filter(isSupportedNavigationItem);
 }
 
 function normalizeNavigationItemOrder(
@@ -80,7 +89,7 @@ function normalizeNavigationItemOrder(
     const normalizedOrder = Array.isArray(parsedOrder)
         ? parsedOrder.filter(
               (item, index, items): item is NavigationItemPreferenceId =>
-                  DEFAULT_NAVIGATION_ITEM_ORDER.includes(item) &&
+                  isSupportedNavigationItem(item) &&
                   items.indexOf(item) === index,
           )
         : [];
@@ -136,13 +145,11 @@ export async function GET() {
 
         return NextResponse.json(toPreferencesResponse(profile));
     } catch (error) {
+        logger.error("Failed to fetch preferences", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to fetch preferences",
-            },
+            { error: "Failed to fetch preferences" },
             { status: 500 },
         );
     }
@@ -159,73 +166,32 @@ export async function PATCH(request: Request) {
             );
         }
 
-        const body = (await request.json()) as PatchRequestBody;
-
-        if (
-            body.showDocsInNavigation !== undefined &&
-            typeof body.showDocsInNavigation !== "boolean"
-        ) {
+        let body: PatchRequestBody;
+        try {
+            body = await request.json();
+        } catch {
             return NextResponse.json(
-                {
-                    error: "Invalid showDocsInNavigation value. Must be a boolean",
-                },
+                { error: "Invalid JSON body" },
                 { status: 400 },
             );
         }
 
-        if (
-            body.showFriendsInNavigation !== undefined &&
-            typeof body.showFriendsInNavigation !== "boolean"
-        ) {
-            return NextResponse.json(
-                {
-                    error: "Invalid showFriendsInNavigation value. Must be a boolean",
-                },
-                { status: 400 },
-            );
-        }
-
-        if (
-            body.showSettingsInNavigation !== undefined &&
-            typeof body.showSettingsInNavigation !== "boolean"
-        ) {
-            return NextResponse.json(
-                {
-                    error: "Invalid showSettingsInNavigation value. Must be a boolean",
-                },
-                { status: 400 },
-            );
-        }
-
-        if (
-            body.showAddFriendInHeader !== undefined &&
-            typeof body.showAddFriendInHeader !== "boolean"
-        ) {
-            return NextResponse.json(
-                {
-                    error: "Invalid showAddFriendInHeader value. Must be a boolean",
-                },
-                { status: 400 },
-            );
-        }
-
-        if (
-            body.telemetryEnabled !== undefined &&
-            typeof body.telemetryEnabled !== "boolean"
-        ) {
-            return NextResponse.json(
-                {
-                    error: "Invalid telemetryEnabled value. Must be a boolean",
-                },
-                { status: 400 },
-            );
+        for (const field of BOOLEAN_PREFERENCE_FIELDS) {
+            if (body[field] !== undefined && typeof body[field] !== "boolean") {
+                return NextResponse.json(
+                    {
+                        error: `Invalid ${field} value. Must be a boolean`,
+                    },
+                    { status: 400 },
+                );
+            }
         }
 
         if (
             body.navigationItemOrder !== undefined &&
             (!Array.isArray(body.navigationItemOrder) ||
                 body.navigationItemOrder.some(
-                    (item) => !DEFAULT_NAVIGATION_ITEM_ORDER.includes(item),
+                    (item) => !isSupportedNavigationItem(item),
                 ))
         ) {
             return NextResponse.json(
@@ -237,11 +203,9 @@ export async function PATCH(request: Request) {
         }
 
         if (
-            body.showDocsInNavigation === undefined &&
-            body.showFriendsInNavigation === undefined &&
-            body.showSettingsInNavigation === undefined &&
-            body.showAddFriendInHeader === undefined &&
-            body.telemetryEnabled === undefined &&
+            !BOOLEAN_PREFERENCE_FIELDS.some(
+                (field) => body[field] !== undefined,
+            ) &&
             body.navigationItemOrder === undefined
         ) {
             return NextResponse.json(
@@ -288,7 +252,7 @@ export async function PATCH(request: Request) {
                 mergedPreferences.navigationItemOrder;
         }
 
-        let updatedProfile;
+        let updatedProfile: Awaited<ReturnType<typeof updateUserProfile>>;
 
         try {
             updatedProfile = await updateUserProfile(
@@ -313,13 +277,11 @@ export async function PATCH(request: Request) {
 
         return NextResponse.json(toPreferencesResponse(updatedProfile));
     } catch (error) {
+        logger.error("Failed to update preferences", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to update preferences",
-            },
+            { error: "Failed to update preferences" },
             { status: 500 },
         );
     }

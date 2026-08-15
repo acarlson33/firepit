@@ -21,6 +21,7 @@ import {
     unmuteConversation,
 } from "../lib/notification-settings";
 import * as notificationSettingsModule from "../lib/notification-settings";
+import { clearNotificationSettingsCache } from "../lib/notification-settings";
 import { getAdminClient } from "../lib/appwrite-admin";
 
 // Mock the appwrite-admin module
@@ -54,6 +55,7 @@ vi.mock("../lib/appwrite-core", () => ({
 describe("Notification Settings", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        clearNotificationSettingsCache();
         // Set up environment variables
         process.env.APPWRITE_DATABASE_ID = "test-db";
     });

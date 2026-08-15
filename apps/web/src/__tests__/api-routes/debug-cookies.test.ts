@@ -20,16 +20,20 @@ vi.mock("next/headers", () => ({
 // Mock node-appwrite
 const mockAccountGet = vi.fn();
 
-vi.mock("node-appwrite", () => ({
-    Client: vi.fn().mockImplementation(() => ({
-        setEndpoint: vi.fn().mockReturnThis(),
-        setProject: vi.fn().mockReturnThis(),
-        setSession: vi.fn().mockReturnThis(),
-    })),
-    Account: vi.fn().mockImplementation(() => ({
-        get: mockAccountGet,
-    })),
-}));
+ vi.mock("node-appwrite", () => ({
+     Client: vi.fn().mockImplementation(function () {
+         return {
+             setEndpoint: vi.fn().mockReturnThis(),
+             setProject: vi.fn().mockReturnThis(),
+             setSession: vi.fn().mockReturnThis(),
+         };
+     }),
+     Account: vi.fn().mockImplementation(function () {
+         return {
+             get: mockAccountGet,
+         };
+     }),
+ }));
 
 // Mock appwrite-core to return dynamic env values
 vi.mock("@/lib/appwrite-core", () => ({
@@ -153,7 +157,7 @@ describe("GET /api/debug-cookies", () => {
         expect(data.sessionCookieValue?.length).toBeLessThan(
             longSessionValue.length,
         );
-        expect(data.sessionCookieValueFull).toBe(longSessionValue);
+        expect(data.sessionCookieValueFull).toBeUndefined();
     });
 
     it("should handle missing environment variables", async () => {

@@ -6,7 +6,7 @@ import { normalizeStatus } from "./status-normalization";
 
 /**
  * Returns config.
- * @returns {{ endpoint: string; project: string; databaseId: string; collections: { servers: string; channels: string; categories: string; messages: string; audit: string; typing: string; memberships: string; bannedUsers: string; mutedUsers: string; friendships: string; blocks: string; profiles: string; conversations: string; directMessages: string; statuses: string; messageAttachments: string; pinnedMessages: string; featureFlags: string; notificationSettings: string; inboxItems: string; threadReads: string; }; buckets: { avatars: string; emojis: string; images: string; files: string; }; teams: { adminTeamId: string | null; moderatorTeamId: string | null; }; }} The return value.
+ * @returns {ReturnType<typeof getEnvConfig>} The return value.
  */
 function getConfig() {
     return getEnvConfig();
@@ -14,7 +14,7 @@ function getConfig() {
 
 /**
  * Returns databases.
- * @returns {Databases} The return value.
+ * @returns {ReturnType<typeof getBrowserDatabases>} The return value.
  */
 function getDatabases() {
     return getBrowserDatabases();
@@ -59,10 +59,14 @@ export async function setUserStatus(
     });
 
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("Failed to set user status:", response.status, errorData);
+        const errorData = (await response.json().catch(() => null)) as {
+            details?: string;
+            error?: string;
+        } | null;
         throw new Error(
-            errorData.details || errorData.error || "Failed to set user status",
+            errorData?.details ||
+                errorData?.error ||
+                `Failed to set user status (${response.status})`,
         );
     }
 
@@ -128,8 +132,12 @@ export async function getUsersStatuses(
         const uniqueUserIds = [...new Set(userIds)];
         const chunks: string[][] = [];
 
-        for (let index = 0; index < uniqueUserIds.length; index += 100) {
-            chunks.push(uniqueUserIds.slice(index, index + 100));
+        // Keep Query.limit(100) while chunking below it so users with multiple
+        // status documents don't crowd out the rest of the chunk.
+        const STATUS_CHUNK_SIZE = 50;
+
+        for (let index = 0; index < uniqueUserIds.length; index += STATUS_CHUNK_SIZE) {
+            chunks.push(uniqueUserIds.slice(index, index + STATUS_CHUNK_SIZE));
         }
 
         const responses = await Promise.all(

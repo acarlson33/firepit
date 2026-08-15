@@ -23,7 +23,15 @@ export async function POST(request: Request) {
             );
         }
 
-        const body = (await request.json()) as RequestBody;
+        let body: RequestBody;
+        try {
+            body = (await request.json()) as RequestBody;
+        } catch {
+            return NextResponse.json(
+                { error: "Invalid JSON" },
+                { status: 400 },
+            );
+        }
         const targetUserId = body.targetUserId ?? body.userId;
         if (!targetUserId) {
             return NextResponse.json(
@@ -42,6 +50,7 @@ export async function POST(request: Request) {
             distinctId: user.$id,
             event: "friend_request_sent",
         });
+        await getPostHogClient().flush();
 
         return NextResponse.json({ friendship, relationship }, { status: 201 });
     } catch (error) {

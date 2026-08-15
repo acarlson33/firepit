@@ -175,6 +175,9 @@ export function UserProfileModal({
 
         return () => {
             cancelled = true;
+            // The consumer is gone; stop any queued/in-flight prefetch for
+            // this profile so it cannot waste bandwidth.
+            profilePrefetchPool.cancel(userId);
         };
     }, [userId, open]);
 

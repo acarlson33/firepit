@@ -35,6 +35,8 @@ vi.mock("@/lib/server-channel-access", () => ({
 }));
 
 vi.mock("@/lib/newrelic-utils", () => ({
+    returnUnauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+    returnForbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
     logger: {
         error: mockLoggerError,
     },
@@ -65,6 +67,7 @@ vi.mock("@/lib/appwrite-server", () => ({
 }));
 
 vi.mock("node-appwrite", () => ({
+    AppwriteException: class AppwriteException extends Error {},
     ID: {
         unique: vi.fn(() => "category-new"),
     },
@@ -120,6 +123,7 @@ describe("Categories API", () => {
         const response = await GET(request);
 
         expect(response.status).toBe(403);
+        expect(mockListDocuments).not.toHaveBeenCalled();
     });
 
     it("lists categories for members", async () => {
@@ -212,6 +216,21 @@ describe("Categories API", () => {
 
         expect(response.status).toBe(400);
         expect(data.error).toContain("cannot be empty");
+    });
+
+    it("returns 404 from PUT when the category does not exist", async () => {
+        mockGetDocument.mockRejectedValue({ type: "document_not_found" });
+
+        const response = await PUT(
+            new NextRequest("http://localhost/api/categories", {
+                method: "PUT",
+                body: JSON.stringify({ categoryId: "missing", name: "New" }),
+            }),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(404);
+        expect(data.error).toBe("Category not found");
     });
 
     it("reassigns linked channels before deleting a category", async () => {
