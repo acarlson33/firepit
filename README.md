@@ -1,325 +1,252 @@
-# firepit
+# Firepit
 
-> **Version 1.9.0** - Production Ready
+A monorepo containing the Firepit web and mobile applications. Built with modern tooling including Next.js, React Native/Expo, TypeScript, and Appwrite.
 
-A modern, open-source chat platform inspired by Discord, built with Next.js 16, Appwrite, and TypeScript. Firepit includes real-time messaging, servers and channels, direct messages, roles and moderation, social features, and a growing parity roadmap for Discord-like workflows.
+## 📦 Workspace Overview
 
-## Features
+### Apps
 
-- **Servers, channels, and categories** - Discord-style server organization with grouped text channels and in-app category management
-- **Direct messages and group DMs** - Private 1:1 and multi-user conversations
-- **Server invites and discovery** - Invite links, public server listings, and direct join flows
-- **Roles and permissions** - Per-server roles with channel overrides and moderation-aware access control
-- **Messaging parity basics** - Replies, mentions, reactions, threads, pins, search, typing indicators, and file attachments
-- **Profiles, presence, and social** - User profiles, statuses, friend requests, and blocking
-- **Notification controls parity** - Scoped notification levels, quiet hours, mute durations, DM privacy, and bulk override management
-- **Moderation and auditability** - Global and server moderation with audit log support
-- **User reporting** - Report users for inappropriate profile content with admin review dashboard
-- **Profile backgrounds and avatar frames** - Custom background colors, gradients, images, and seasonal/preset avatar frames
-- **Custom emoji support** - Standard emoji picker plus uploaded custom emoji assets
+- **[apps/web](./apps/web)** — Next.js web application
+    - Modern React 19 frontend with App Router
+    - Real-time features via Appwrite
+    - TailwindCSS styling
+    - Type-safe API integration
 
-## Codebase Features
+- **[apps/mobile](./apps/mobile)** — React Native mobile app with Expo
+    - iOS, Android, and web support
+    - Shared Appwrite backend
+    - Native performance with React Native
 
-- **Real-time chat** - Appwrite-backed realtime messaging with typing indicators and presence updates
-- **Replies, mentions, reactions, threads, and pins** - Core message workflows across channels and DMs
-- **Direct messages and group DMs** - Shared DM infrastructure for 1:1 and multi-user conversations
-- **Search and attachments** - Message search plus image, file, video, audio, and document attachments
-- **Roles, permissions, categories, and moderation** - Server roles, permission overrides, category management, invite management, bans, kicks, mutes, and audit logs
-- **User reporting and admin review** - End-user reporting plus admin triage flows in `src/components/report-user-dialog.tsx`, `src/lib/appwrite-reports.ts`, and `src/app/admin/reports/page.tsx`
-- **Profiles and status** - User profile enrichment, avatars, pronouns, bios, and custom status messages
-- **Profile backgrounds and avatar frames** - Appearance customization in `src/components/profile-appearance-settings.tsx`, rendering support in `src/components/profile-background.tsx`, and preset frame definitions in `src/lib/preset-frames.ts`
-- **Friend system and blocking** - Social graph controls for safer private messaging
-- **Notification settings and mute controls** - Consistent override behavior across servers, channels, and DMs with server-enriched labels and quiet hours
-- **TypeScript** - Full type safety across the entire codebase
-- **Next.js 16** - App Router with React Server Components
-- **Tailwind CSS** - Modern, responsive UI styling
-- **shadcn/ui** - Accessible UI primitives
-- **PWA ready** - Installable web app support for mobile and desktop browsers
-- **Comprehensive tests** - 2274 passing tests with broad API, hook, and integration coverage
-- **Production hardening** - Error boundaries, rate limiting, security validation, and observability
+### Monorepo Tools
 
-## 📋 Prerequisites
-
-Before you begin, ensure you have:
-
-- **Node.js 18+** or **Bun 1.2+** (Bun 1.3+ preferred for performance improvements) installed
-- An **Appwrite instance** (cloud or self-hosted):
-    - Cloud: [appwrite.io](https://appwrite.io) (free tier available)
-    - Self-hosted: [Installation Guide](https://appwrite.io/docs/installation)
-- **Git** for cloning the repository
+- **Package Manager**: [Bun](https://bun.sh/) (`^1.3.14`)
+- **Build System**: [Turbo](https://turbo.build/) for fast, incremental builds
+- **Language**: TypeScript with strict type checking
+- **Node Version**: `>=20.9.0`
 
 ## 🚀 Quick Start
 
+### Prerequisites
+
+- Node.js 20.9.0+
+- Bun 1.3.14 (install from [bun.sh](https://bun.sh))
+
+### Installation
+
 ```bash
-# 1. Clone the repository
-git clone https://github.com/your-org/firepit.git
-cd firepit
-
-# 2. Install dependencies
+# Install dependencies for all workspaces
 bun install
-
-# 3. Set up environment variables
-cp .env.local.example .env.local
-nano .env.local  # Edit with your Appwrite credentials
-
-# 4. Validate your configuration
-bun run validate-env
-
-# 5. Initialize the database
-bun run setup
-
-# 6. Start the development server
-bun dev  # Uses Turbopack (~700x faster than Webpack)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
+### Development
 
-**Development Commands:**
+```bash
+# Start the web app dev server (port 3000)
+bun run dev
 
-- `bun dev` - Start with Turbopack (recommended, ~1.5s cold start)
-- `bun dev:webpack` - Start with Webpack (fallback, ~12s cold start)
-- `bun build` - Production build with Turbopack
-- `bun build:webpack` - Production build with Webpack (fallback)
+# Or explicitly run web development
+bun run web
 
-Dependency updates follow caret ranges in `package.json`. Use `bun run update:force` to refresh `next`, `appwrite`, and `node-appwrite` to the latest compatible releases, `bun run update:pin` to intentionally pin exact versions, and `bun run update:check` to review available updates. The old `update:exact` name was renamed to `update:pin` to make the policy clearer.
+# Start mobile development
+bun run mobile
 
-## 📚 Documentation
+# Run mobile on specific platforms
+bun run mobile:android
+bun run mobile:ios
+bun run mobile:web
+```
 
-See the `/docs` folder for detailed guides:
+## 📋 Scripts Reference
 
-- [Deployment Guide](./DEPLOYMENT.md) - Production deployment instructions
-- [Documentation Index](./docs/README.md) - Durable product and platform documentation map
-- [Product And Onboarding](./docs/PRODUCT_AND_ONBOARDING.md) - Product shell, onboarding, discovery, and profile flows
-- [Chat And Realtime](./docs/CHAT_AND_REALTIME.md) - Messaging, DMs, pins, threads, search, emoji, typing, status, and notifications
-- [Server Administration](./docs/SERVER_ADMINISTRATION.md) - Roles, invites, permissions, moderation, and audit logging
-- [Feature Flags](./docs/FEATURE_FLAGS.md) - Flag behavior and rollout notes
-- [Telemetry Providers](./docs/TELEMETRY.md) - New Relic/PostHog routing, parity, and event mapping matrix
-- [Platform Operations](./docs/PLATFORM_OPERATIONS.md) - Performance, monitoring, releases, and operations
-- [Roadmap](./ROADMAP.md) - Discord parity roadmap and product priorities
-- [Roadmap Implementation Spec](./docs/ROADMAP_IMPLEMENTATION_SPEC.md) - Technical breakdown of roadmap workstreams
-- [Changelog](./CHANGELOG.md) - Version history and release notes
+### Global Scripts (Monorepo)
 
-## 🚀 Production Deployment
+| Command             | Description                                        |
+| ------------------- | -------------------------------------------------- |
+| `bun run dev`       | Start web development server (shorthand for `web`) |
+| `bun run web`       | Start web dev server on port 3000                  |
+| `bun run build`     | Build all apps (web, mobile)                       |
+| `bun run test`      | Run tests across all workspaces                    |
+| `bun run lint`      | Lint all workspaces                                |
+| `bun run typecheck` | Type-check all workspaces                          |
 
-Firepit is production-ready with:
+### Web App Scripts
 
-✅ **Security Hardening**
+All web scripts can be prefixed with `web:` to run from the root. Example: `bun run web:dev`, `bun run web:test`
 
-- Global error boundaries
-- Rate limiting on uploads and API endpoints
-- Secure session management
-- Input validation and sanitization
+| Command                                  | Description                                        |
+| ---------------------------------------- | -------------------------------------------------- |
+| `bun run web:dev`                        | Start Next.js dev server                           |
+| `bun run web:build`                      | Build for production (with SWC)                    |
+| `bun run web:build:webpack`              | Build using Webpack instead of SWC                 |
+| `bun run web:build:analyze`              | Build with bundle size analysis                    |
+| `bun run web:start`                      | Start production server                            |
+| `bun run web:test`                       | Run Vitest suite                                   |
+| `bun run web:test:coverage`              | Run tests with coverage report                     |
+| `bun run web:lint`                       | Run ESLint                                         |
+| `bun run web:lint:fix`                   | Run ESLint with auto-fix                           |
+| `bun run web:typecheck`                  | Type-check without emitting                        |
+| `bun run web:setup`                      | Interactive setup for Appwrite configuration       |
+| `bun run web:validate-env`               | Validate environment variables                     |
+| `bun run web:validate-env:ci`            | Validate environment variables for CI              |
+| `bun run web:cleanup-orphan-memberships` | Database maintenance script                        |
+| `bun run web:knip`                       | Check for dead code and unused dependencies        |
+| `bun run web:update:force`               | Update Next.js, Appwrite to latest                 |
+| `bun run web:update:pin`                 | Update and pin Next.js, Appwrite to exact versions |
+| `bun run web:update:check`               | Check for outdated packages                        |
 
-✅ **Performance Optimization**
+### Mobile App Scripts
 
-- **90%+ improvement in first load times** (from 30+ seconds to 2-3 seconds)
-- **85% faster First Contentful Paint** (8s → 0.8-1.2s)
-- **50% smaller bundle size** (2.5MB → 800KB-1.2MB)
-- Response compression (60-70% bandwidth reduction)
-- Virtual scrolling for large lists
-- Optimized bundle size with code splitting
-- Partial Prerendering (PPR) for instant page loads
-- Aggressive caching for repeat visits (~100ms)
+All mobile scripts can be prefixed with `mobile:` to run from the root. Example: `bun run mobile:start`, `bun run mobile:android`
 
-✅ **Monitoring & Observability**
+| Command                  | Description                    |
+| ------------------------ | ------------------------------ |
+| `bun run mobile:start`   | Start Expo dev server          |
+| `bun run mobile:android` | Run on Android device/emulator |
+| `bun run mobile:ios`     | Run on iOS device/simulator    |
+| `bun run mobile:web`     | Run in web browser             |
+| `bun run mobile:lint`    | Run ESLint                     |
 
-- New Relic APM integration
-- Comprehensive error tracking
-- Performance metrics
-- Audit logging
-
-✅ **Testing & Quality**
-
-- 2274 passing tests
-- Comprehensive test coverage
-- Automated CI/CD pipeline
-- Strict ESLint configuration
-
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed production deployment instructions.
-
-## ⚠️ Known Limitations
-
-Firepit still has meaningful Discord parity gaps in a few areas:
-
-- Richer community/server organization beyond categories, such as server templates, onboarding screens, and announcement-style surfaces, is still in progress
-- Notification-center, unread-management, and digest-style attention flows are still incomplete
-- Voice/video calls and screen sharing are not implemented
-- Bots, slash commands, and webhooks are not implemented
-- Native mobile apps are not implemented, though PWA support exists
-
-See [ROADMAP.md](./ROADMAP.md) for the complete feature roadmap.
-
-## 🤝 Contributing
-
-We welcome contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for:
-
-- Development workflow
-- Code style guidelines
-- Testing requirements
-- Pull request process
-- Issue reporting templates
-
-## 🗂️ Project Structure
+## 📂 Project Structure
 
 ```
 firepit/
-├── src/
-│   ├── app/              # Next.js app router pages
-│   ├── components/       # React components
-│   ├── lib/              # Utility functions and Appwrite integration
-│   └── __tests__/        # Vitest test suites
-├── scripts/
-│   ├── setup-appwrite.ts    # Database initialization script
-│   └── validate-env.ts      # Environment validation script
-├── public/               # Static assets
-├── DEPLOYMENT.md         # Deployment documentation
-└── .env.local.example    # Environment variable template
+├── apps/
+│   ├── web/                    # Next.js web application
+│   │   ├── src/
+│   │   ├── public/
+│   │   ├── scripts/
+│   │   ├── docs/               # Web-specific documentation
+│   │   └── package.json
+│   │
+│   └── mobile/                 # React Native/Expo mobile app
+│       ├── src/
+│       ├── android/
+│       ├── assets/
+│       ├── docs/               # Mobile-specific documentation
+│       └── package.json
+│
+├── docs/                       # Monorepo documentation
+├── package.json                # Root workspace configuration
+├── turbo.json                  # Build pipeline configuration
+├── tsconfig.json               # TypeScript root config
+└── bunfig.toml                 # Bun package manager config
 ```
 
-## 🛠️ Available Scripts
+## 🔧 Development Workflow
 
-| Command                 | Description                                     |
-| ----------------------- | ----------------------------------------------- |
-| `bun dev`               | Start development server (with Turbopack)       |
-| `bun build`             | Build for production                            |
-| `bun start`             | Start production server                         |
-| `bun run test`          | Run all tests with Vitest                       |
-| `bun run test:coverage` | Run tests with coverage report                  |
-| `bun lint`              | Check code with ESLint                          |
-| `bun lint:fix`          | Fix auto-fixable linting issues                 |
-| `bun validate-env`      | Validate environment configuration              |
-| `bun setup`             | Initialize Appwrite database and collections    |
-| `bun run update:force`  | Refresh core package versions with caret ranges |
-| `bun run update:pin`    | Pin core package versions exactly               |
-| `bun run update:check`  | Check for available updates                     |
+### Building
 
-## 🔧 Configuration
+```bash
+# Build all apps
+bun run build
 
-### Environment Variables
+# Build specific app
+bun run web:build
+bun run web:build:webpack    # Alternative build with Webpack
+```
 
-The application requires several environment variables. Copy `.env.local.example` to `.env.local` and configure:
-
-- `APPWRITE_ENDPOINT` - Your Appwrite API endpoint
-- `APPWRITE_PROJECT_ID` - Your Appwrite project ID
-- `APPWRITE_API_KEY` - Server-side API key with full permissions
-- `SYSTEM_SENDER_USER_ID` - Optional Appwrite user ID of the dedicated system announcement sender.
-  Used for system announcement threads in DMs.
-  Set this in production to the user's `$id` from Appwrite Console -> Auth -> Users.
-  When unset, announcement threads are read-only.
-  See DEPLOYMENT.md for details.
-
-For a complete list and detailed explanations, see [DEPLOYMENT.md](./DEPLOYMENT.md#2-environment-configuration).
-
-### First-Time Setup
-
-1. **Create an Appwrite account and project** at [appwrite.io](https://appwrite.io)
-2. **Generate an API key** with required scopes (see DEPLOYMENT.md)
-3. **Configure environment variables** in `.env.local`
-4. **Run validation**: `bun run validate-env`
-5. **Initialize database**: `bun run setup`
-6. **Start the app**: `bun dev`
-7. **Create your account** in the UI
-8. **Make yourself admin** by setting `APPWRITE_ADMIN_USER_IDS` in `.env.local`
-
-For detailed instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-- **"Appwrite endpoint not configured"** - Check your `.env.local` file exists and has the correct values
-- **"Project not found"** - Verify your `APPWRITE_PROJECT_ID` matches your Appwrite Console
-- **"Missing scope" errors** - Regenerate your API key with all required permissions
-- **Setup script fails** - Ensure your API key has databases, collections, attributes, and indexes permissions
-- **Setup script reports an attribute limit on `notification_settings`** - Update to the latest code and rerun `bun run setup`; unread persistence now uses a dedicated `thread_reads` collection instead of adding another notification-settings attribute
-
-For more solutions, see [DEPLOYMENT.md - Troubleshooting](./DEPLOYMENT.md#troubleshooting).
-
-## 🧪 Testing
-
-This project maintains a comprehensive test suite with 100% pass rate:
+### Testing
 
 ```bash
 # Run all tests
 bun run test
 
-# Run tests with coverage report
-bun run test:coverage
-
-# Run tests in watch mode (during development)
-bun run test --watch
+# Run with coverage
+bun run web:test:coverage
 ```
 
-Current test coverage: **49.86%** lines (growing, **34951/70089**)
-
-- 2274 tests passing across 203 test suites
-- Comprehensive API route testing
-- Focus on security-critical modules (auth, roles, moderation), and modules critical for function (API routes, hooks, utility files, etc.)
-
-## 📦 Deployment
-
-### Vercel (Recommended)
-
-1. Push your code to GitHub
-2. Import project in [Vercel](https://vercel.com)
-3. Add environment variables from `.env.local`
-4. Deploy!
-
-### Self-Hosted
+### Code Quality
 
 ```bash
-# Build the application
-bun build
+# Lint all workspaces
+bun run lint
 
-# Start production server
-bun start
+# Auto-fix linting issues
+bun run web:lint:fix
+
+# Type checking
+bun run typecheck
+
+# Dead code and unused dependency checking
+bun run web:knip
 ```
 
-For production deployment with Nginx, Docker, or other platforms, see [DEPLOYMENT.md - Production Deployment](./DEPLOYMENT.md#production-deployment).
+### Environment Setup
 
-## 🤝 Contributing
+```bash
+# Interactive setup for web app (Appwrite, etc.)
+bun run web:setup
 
-We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for:
+# Validate environment variables
+bun run web:validate-env
 
-- Development workflow
-- Code style guidelines
-- Testing requirements
-- Pull request process
-- Issue reporting templates
+# For CI environments
+bun run web:validate-env:ci
+```
+
+## 📚 Documentation
+
+- [Monorepo Architecture](./docs/monorepo.md)
+- **Web App**: See [apps/web/README.md](./apps/web/README.md) and [apps/web/docs/](./apps/web/docs/)
+- **Mobile App**: See [apps/mobile/README.md](./apps/mobile/README.md) and [apps/mobile/docs/](./apps/mobile/docs/)
+
+## 🛠️ Build Pipeline (Turbo)
+
+The monorepo uses Turbo for optimized, incremental builds. Configured tasks:
+
+- `build` — Depends on dependency builds, caches output
+- `lint` — Caches results
+- `test` — Depends on `build`, caches results
+- `typecheck` — Depends on `build`, caches results
+
+Turbo automatically:
+
+- Parallelizes independent tasks
+- Caches build outputs
+- Skips unchanged workspaces
+- Manages task dependencies
+
+## 💡 Tips & Troubleshooting
+
+### Clear Build Cache
+
+```bash
+bunx turbo clean
+```
+
+### Reinstall Dependencies
+
+```bash
+rm -rf node_modules
+rm -rf apps/*/node_modules
+bun install
+```
+
+### Check Outdated Packages
+
+```bash
+bun outdated
+bun run web:update:check
+```
+
+### Use Webpack Builder for Web
+
+If SWC builds are having issues:
+
+```bash
+bun run web:dev:webpack
+bun run web:build:webpack
+```
+
+## 📝 Contributing
+
+When adding new workspaces or scripts:
+
+1. Update `package.json` workspaces if needed
+2. Document new scripts in this README
+3. Run `bun run lint` and `bun run typecheck` to validate
+4. Ensure Turbo can properly orchestrate new tasks
 
 ## 📄 License
 
-firepit, a realtime chat app
-Copyright (C) 2026 August (acarlson33)
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-Licensed under the GNU General Public License (GPL) v3.
-You can find the License here: [License](./LICENSE)
-
-## 🙏 Acknowledgments
-
-Built with:
-
-- [Next.js](https://nextjs.org/)
-- [Appwrite](https://appwrite.io/)
-- [TailwindCSS](https://tailwindcss.com/)
-- [shadcn/ui](https://ui.shadcn.com/)
-- [Vitest](https://vitest.dev/)
-
-## 📧 Support
-
-- **Documentation**: [DEPLOYMENT.md](./DEPLOYMENT.md)
-- **Issues**: [GitHub Issues](https://github.com/your-org/firepit/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/firepit/discussions)
+The license at [LICENSE](./LICENSE), applies to ALL projects under `apps/`. (The license covers all code in this repository).

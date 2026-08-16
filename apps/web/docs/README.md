@@ -4,6 +4,7 @@ This directory was consolidated into a smaller set of durable, section-based doc
 
 ## Sections
 
+- `MOBILE_COLOR_PALETTE_N.md`: semantic palette and brand accents for React Native parity
 - `PRODUCT_AND_ONBOARDING.md`: product overview, account setup, onboarding, discovery, and user-facing flows
 - `CHAT_AND_REALTIME.md`: channels, direct messages, reactions, threads, typing, status, search, uploads, pins, and notifications
 - `SERVER_ADMINISTRATION.md`: server creation, invites, roles, permission overrides, moderation, audit logs, and admin workflows

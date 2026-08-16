@@ -1,0 +1,3320 @@
+openapi: 3.1.0
+info:
+    title: Firepit API
+    version: 1.8.0
+    description: |
+        Firepit is a realtime communication platform built with Next.js 16, React 19, Bun, and Appwrite.
+
+        This specification covers the public and first-party client API surface currently used by the application.
+        Internal debug and test-only endpoints are intentionally omitted.
+    contact:
+        name: Firepit
+        url: https://github.com/acarlson33/firepit
+    license:
+        name: GNU General Public License v3.0
+        url: https://opensource.org/licenses/GPL-3.0
+
+servers:
+    - url: http://localhost:3000
+      description: Local development server
+    - url: https://firepit.example.com
+      description: Example production server
+
+tags:
+    - name: Platform
+      description: Session and runtime metadata
+    - name: Servers
+      description: Server lifecycle, discovery, membership, and stats
+    - name: Channels
+      description: Channel and category discovery, organization, and pinned-message access
+    - name: Messages
+      description: Channel message creation and management
+    - name: Direct Messages
+      description: Conversation and direct-message operations
+    - name: Notifications
+      description: Notification settings and unread inbox aggregation
+    - name: Presence
+      description: Status and typing state
+    - name: Users
+      description: Current user, profiles, memberships, and preferences
+    - name: Search
+      description: Search and lookup endpoints
+    - name: Uploads
+      description: Image, file, and emoji uploads
+    - name: Emojis
+      description: Custom emoji listing and retrieval
+    - name: Roles
+      description: Roles, assignments, and channel permission overrides
+    - name: Invites
+      description: Invite preview, redemption, and server-scoped invite management
+    - name: Moderation
+      description: Moderation actions, mute state, permissions, and audit logs
+    - name: Feature Flags
+      description: Client-visible feature flag state
+
+components:
+    securitySchemes:
+        sessionCookie:
+            type: apiKey
+            in: cookie
+            name: a_session_*
+            description: Appwrite session cookie used by authenticated first-party clients
+
+    schemas:
+        Error:
+            type: object
+            required:
+                - error
+            properties:
+                error:
+                    type: string
+                details:
+                    description: Optional structured error context
+                    oneOf:
+                        - type: string
+                        - type: object
+                          additionalProperties: true
+
+        Success:
+            type: object
+            properties:
+                success:
+                    type: boolean
+                    default: true
+
+        JoinMembership:
+            type: object
+            required:
+                - $id
+                - $createdAt
+                - userId
+                - serverId
+                - role
+            properties:
+                $id:
+                    type: string
+                $createdAt:
+                    type: string
+                    format: date-time
+                $updatedAt:
+                    type: string
+                    format: date-time
+                userId:
+                    type: string
+                serverId:
+                    type: string
+                role:
+                    type: string
+                    enum: [owner, member]
+
+        JoinResponse:
+            allOf:
+                - $ref: "#/components/schemas/Success"
+                - type: object
+                  required:
+                      - membership
+                  properties:
+                      membership:
+                          oneOf:
+                              - $ref: "#/components/schemas/JoinMembership"
+                              - type: "null"
+
+        CreateServerResponse:
+            allOf:
+                - $ref: "#/components/schemas/Success"
+                - type: object
+                  required:
+                      - membership
+                      - server
+                  properties:
+                      membership:
+                          oneOf:
+                              - $ref: "#/components/schemas/JoinMembership"
+                              - type: "null"
+                      server:
+                          $ref: "#/components/schemas/Server"
+
+        UserSummary:
+            type: object
+            properties:
+                $id:
+                    type: string
+                userId:
+                    type: string
+                name:
+                    type: string
+                displayName:
+                    type: string
+                userName:
+                    type: string
+                avatarUrl:
+                    type: string
+                    format: uri
+
+        UserProfile:
+            type: object
+            properties:
+                userId:
+                    type: string
+                displayName:
+                    type: string
+                userName:
+                    type: string
+                avatarUrl:
+                    type: string
+                    format: uri
+                pronouns:
+                    type: string
+                bio:
+                    type: string
+                profileBackgroundColor:
+                    type: string
+                    description: Hex color used for the user's profile background when no gradient/image is set.
+                    pattern: "^#[0-9A-Fa-f]{6}$"
+                    example: "#1a1a2e"
+                profileBackgroundGradient:
+                    type: string
+                    description: CSS gradient string used for the profile background when selected. The server sanitizes this value and only accepts linear-gradient, radial-gradient, or conic-gradient function syntax.
+                    pattern: '^(?!.*(?:url\s*\(|data:|javascript:))(linear-gradient|radial-gradient|conic-gradient)\([^;{}<>`\\]+\)$'
+                    example: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+                profileBackgroundUrl:
+                    type: string
+                    format: uri
+                    description: Resource URI for the uploaded profile background image.
+                avatarFramePreset:
+                    type: string
+                    description: Preset avatar frame ID (for example default-round, seasonal-winter-2026).
+                    example: "default-round"
+                avatarFrameUrl:
+                    type: string
+                    format: uri
+                    description: Resource URI for the resolved avatar frame image asset.
+
+        CurrentUser:
+            allOf:
+                - $ref: "#/components/schemas/UserSummary"
+                - type: object
+                  properties:
+                      email:
+                          type: string
+                          format: email
+                      roles:
+                          type: object
+                          additionalProperties: true
+
+        Server:
+            type: object
+            required:
+                - $id
+                - name
+                - ownerId
+                - isPublic
+                - defaultOnSignup
+                - memberCount
+            properties:
+                $id:
+                    type: string
+                name:
+                    type: string
+                ownerId:
+                    type: string
+                iconFileId:
+                    type: [string, "null"]
+                iconUrl:
+                    type: [string, "null"]
+                    format: uri
+                bannerFileId:
+                    type: [string, "null"]
+                bannerUrl:
+                    type: [string, "null"]
+                    format: uri
+                description:
+                    type: [string, "null"]
+                isPublic:
+                    type: boolean
+                defaultOnSignup:
+                    type: boolean
+                memberCount:
+                    type: integer
+                $createdAt:
+                    type: string
+                    format: date-time
+
+        ServerPreview:
+            type: object
+            properties:
+                $id:
+                    type: string
+                name:
+                    type: string
+                ownerId:
+                    type: string
+                iconUrl:
+                    type: string
+                    format: uri
+                description:
+                    type: string
+                isPublic:
+                    type: boolean
+                defaultOnSignup:
+                    type: boolean
+                memberCount:
+                    type: integer
+                $createdAt:
+                    type: string
+                    format: date-time
+
+        ServerMinimal:
+            type: object
+            required:
+                - $id
+                - name
+            properties:
+                $id:
+                    type: string
+                name:
+                    type: string
+
+        Channel:
+            type: object
+            properties:
+                $id:
+                    type: string
+                serverId:
+                    type: string
+                name:
+                    type: string
+                topic:
+                    type: string
+                type:
+                    type: string
+                    enum: [text, voice, announcement]
+                categoryId:
+                    type: string
+                position:
+                    type: integer
+                $createdAt:
+                    type: string
+                    format: date-time
+                $updatedAt:
+                    type: string
+                    format: date-time
+
+        ChannelCreate:
+            type: object
+            required:
+                - serverId
+                - name
+            properties:
+                serverId:
+                    type: string
+                name:
+                    type: string
+                type:
+                    type: string
+                    enum: [text, voice, announcement]
+                topic:
+                    type: string
+
+        ChannelCategory:
+            type: object
+            properties:
+                $id:
+                    type: string
+                serverId:
+                    type: string
+                name:
+                    type: string
+                position:
+                    type: integer
+                createdBy:
+                    type: string
+                $createdAt:
+                    type: string
+                    format: date-time
+                $updatedAt:
+                    type: string
+                    format: date-time
+
+        FileAttachment:
+            type: object
+            properties:
+                fileId:
+                    type: string
+                fileName:
+                    type: string
+                fileSize:
+                    type: integer
+                fileType:
+                    type: string
+                fileUrl:
+                    type: string
+                    format: uri
+                thumbnailUrl:
+                    type: string
+                    format: uri
+
+        Message:
+            type: object
+            properties:
+                $id:
+                    type: string
+                userId:
+                    type: string
+                userName:
+                    type: string
+                text:
+                    type: string
+                channelId:
+                    type: string
+                serverId:
+                    type: string
+                imageFileId:
+                    type: string
+                imageUrl:
+                    type: string
+                    format: uri
+                replyToId:
+                    type: string
+                mentions:
+                    type: array
+                    items:
+                        type: string
+                attachments:
+                    type: array
+                    items:
+                        $ref: "#/components/schemas/FileAttachment"
+                removedAt:
+                    type: string
+                    format: date-time
+                removedBy:
+                    type: string
+                $createdAt:
+                    type: string
+                    format: date-time
+
+        DirectConversation:
+            type: object
+            properties:
+                $id:
+                    type: string
+                participants:
+                    type: array
+                    items:
+                        type: string
+                isGroup:
+                    type: boolean
+                name:
+                    type: string
+                avatarUrl:
+                    type: string
+                    format: uri
+                createdBy:
+                    type: string
+                participantCount:
+                    type: integer
+                lastMessageAt:
+                    type: string
+                    format: date-time
+                $createdAt:
+                    type: string
+                    format: date-time
+
+        DirectMessage:
+            allOf:
+                - $ref: "#/components/schemas/Message"
+                - type: object
+                  properties:
+                      conversationId:
+                          type: string
+
+        InboxItemBase:
+            type: object
+            properties:
+                id:
+                    type: string
+                kind:
+                    type: string
+                    enum: [mention, thread]
+                contextKind:
+                    type: string
+                    enum: [channel, conversation]
+                contextId:
+                    type: string
+                serverId:
+                    type: string
+                messageId:
+                    type: string
+                parentMessageId:
+                    type: string
+                previewText:
+                    type: string
+                unreadCount:
+                    type: integer
+                authorUserId:
+                    type: string
+                authorLabel:
+                    type: string
+                authorAvatarUrl:
+                    type: string
+                    format: uri
+                muted:
+                    type: boolean
+
+        InboxItem:
+            allOf:
+                - $ref: "#/components/schemas/InboxItemBase"
+                - type: object
+                  properties:
+                      latestActivityAt:
+                          type: string
+                          format: date-time
+
+        InboxResponse:
+            type: object
+            properties:
+                contractVersion:
+                    type: string
+                    enum: [thread_v1, message_v2]
+                    default: thread_v1
+                items:
+                    type: array
+                    items:
+                        $ref: "#/components/schemas/InboxItem"
+                unreadCount:
+                    type: integer
+                counts:
+                    type: object
+                    properties:
+                        mention:
+                            type: integer
+                        thread:
+                            type: integer
+
+        InboxDigestItem:
+            allOf:
+                - $ref: "#/components/schemas/InboxItemBase"
+                - type: object
+                  properties:
+                      activityAt:
+                          type: string
+                          format: date-time
+
+        InboxDigestResponse:
+            type: object
+            properties:
+                contractVersion:
+                    type: string
+                    enum: [thread_v1, message_v2]
+                    default: thread_v1
+                contextKind:
+                    type: string
+                    enum: [channel, conversation]
+                contextId:
+                    type: string
+                items:
+                    type: array
+                    items:
+                        $ref: "#/components/schemas/InboxDigestItem"
+                totalUnreadCount:
+                    type: integer
+
+        ThreadReadsResponse:
+            type: object
+            properties:
+                contextId:
+                    type: string
+                contextKind:
+                    type: string
+                    enum: [channel, conversation]
+                reads:
+                    type: object
+                    additionalProperties:
+                        type: string
+                        format: date-time
+                        pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+
+        ThreadReadsPatchRequest:
+            type: object
+            required: [contextId, contextKind, reads]
+            properties:
+                contextId:
+                    type: string
+                contextKind:
+                    type: string
+                    enum: [channel, conversation]
+                reads:
+                    type: object
+                    additionalProperties:
+                        type: string
+                        format: date-time
+                        pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+
+        Invite:
+            type: object
+            properties:
+                $id:
+                    type: string
+                code:
+                    type: string
+                    pattern: "^[A-Za-z0-9]{10}$"
+                serverId:
+                    type: string
+                creatorId:
+                    type: string
+                channelId:
+                    type: string
+                expiresAt:
+                    type: string
+                    format: date-time
+                maxUses:
+                    type: integer
+                currentUses:
+                    type: integer
+                temporary:
+                    type: boolean
+                $createdAt:
+                    type: string
+                    format: date-time
+
+        ServerStats:
+            type: object
+            properties:
+                memberCount:
+                    type: integer
+                channelCount:
+                    type: integer
+                totalMessages:
+                    type: integer
+                recentMessages24h:
+                    type: integer
+
+        ServerMember:
+            type: object
+            properties:
+                userId:
+                    type: string
+                displayName:
+                    type: string
+                userName:
+                    type: string
+                avatarUrl:
+                    type: string
+                    format: uri
+                joinedAt:
+                    type: string
+                    format: date-time
+                roles:
+                    type: array
+                    items:
+                        type: string
+
+        ServerPermissions:
+            type: object
+            properties:
+                isMember:
+                    type: boolean
+                isServerOwner:
+                    type: boolean
+                permissions:
+                    type: object
+                    additionalProperties:
+                        type: boolean
+
+        ModerationRequest:
+            type: object
+            required:
+                - action
+                - userId
+            properties:
+                action:
+                    type: string
+                    enum: [ban, unban, mute, unmute, kick]
+                userId:
+                    type: string
+                reason:
+                    type: string
+
+        AuditLogEntry:
+            type: object
+            properties:
+                $id:
+                    type: string
+                action:
+                    type: string
+                moderatorId:
+                    type: string
+                moderatorName:
+                    type: string
+                targetUserId:
+                    type: string
+                targetUserName:
+                    type: string
+                reason:
+                    type: string
+                details:
+                    type: string
+                timestamp:
+                    type: string
+                    format: date-time
+
+        Role:
+            type: object
+            properties:
+                $id:
+                    type: string
+                serverId:
+                    type: string
+                name:
+                    type: string
+                color:
+                    type: string
+                permissions:
+                    type: object
+                    additionalProperties:
+                        type: boolean
+
+        RoleAssignment:
+            type: object
+            properties:
+                $id:
+                    type: string
+                userId:
+                    type: string
+                serverId:
+                    type: string
+                roleId:
+                    type: string
+
+        ChannelPermissionOverride:
+            type: object
+            properties:
+                $id:
+                    type: string
+                channelId:
+                    type: string
+                roleId:
+                    type: string
+                allow:
+                    type: object
+                    additionalProperties:
+                        type: boolean
+                deny:
+                    type: object
+                    additionalProperties:
+                        type: boolean
+
+        StatusDocument:
+            type: object
+            properties:
+                userId:
+                    type: string
+                status:
+                    type: string
+                    enum: [online, offline, away, dnd]
+                customMessage:
+                    type: string
+                expiresAt:
+                    type: string
+                    format: date-time
+                lastSeenAt:
+                    type: string
+                    format: date-time
+                isManuallySet:
+                    type: boolean
+
+        NotificationSettings:
+            type: object
+            properties:
+                muted:
+                    type: boolean
+                desktop:
+                    type: boolean
+                sound:
+                    type: boolean
+                mentionsOnly:
+                    type: boolean
+
+        FeatureFlagState:
+            type: object
+            properties:
+                key:
+                    type: string
+                enabled:
+                    type: boolean
+
+        VersionInfo:
+            type: object
+            properties:
+                version:
+                    type: string
+                commit:
+                    type: string
+                branch:
+                    type: string
+                builtAt:
+                    type: string
+                    format: date-time
+
+paths:
+    /api/me:
+        get:
+            tags: [Platform, Users]
+            summary: Get the current authenticated user
+            security:
+                - sessionCookie: []
+            responses:
+                "200":
+                    description: Current user
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/CurrentUser"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/version:
+        get:
+            tags: [Platform]
+            summary: Get deployed version metadata
+            security: []
+            responses:
+                "200":
+                    description: Version payload
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/VersionInfo"
+
+    /api/servers:
+        get:
+            tags: [Servers]
+            summary: List servers available to the current user
+            security:
+                - sessionCookie: []
+            responses:
+                "200":
+                    description: Server list
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    servers:
+                                        type: array
+                                        items:
+                                            $ref: "#/components/schemas/Server"
+                                    nextCursor:
+                                        type: [string, "null"]
+
+    /api/servers/create:
+        post:
+            tags: [Servers]
+            summary: Create a server
+            description: >-
+                  Returns CreateServerResponse containing the created server object and any associated
+                  metadata. The 201 response includes the required non-null server field with the new
+                  server payload; failures are represented by the non-2xx responses.
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [name]
+                            properties:
+                                name:
+                                    type: string
+                                description:
+                                    type: string
+                                iconFileId:
+                                    type: string
+                                bannerFileId:
+                                    type: string
+                                isPublic:
+                                    type: boolean
+            responses:
+                "201":
+                    description: Created
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/CreateServerResponse"
+                "400":
+                    description: Invalid request
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/servers/public:
+        get:
+            tags: [Servers]
+            summary: List public servers for discovery
+            security: []
+            responses:
+                "200":
+                    description: Public server list
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    servers:
+                                        type: array
+                                        items:
+                                            $ref: "#/components/schemas/ServerPreview"
+
+    /api/servers/join:
+        post:
+            tags: [Servers]
+            summary: Join a server directly
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [serverId]
+                            properties:
+                                serverId:
+                                    type: string
+            responses:
+                "200":
+                    description: Join succeeded
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/JoinResponse"
+                "403":
+                    description: Server is private and requires an invite
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/servers/default-signup:
+        get:
+            tags: [Servers]
+            summary: Resolve the server configured as default for new user signup
+            security:
+                - sessionCookie: []
+            responses:
+                "200":
+                    description: Current signup default server (admin only). Returns minimal server metadata for admin selectors.
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                required: [server]
+                                properties:
+                                    server:
+                                        anyOf:
+                                            - $ref: "#/components/schemas/ServerMinimal"
+                                            - type: "null"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "403":
+                    description: Forbidden (requires instance admin)
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/servers/{serverId}:
+        patch:
+            tags: [Servers]
+            summary: Update server customization and visibility settings
+            x-roles:
+                - server owner or member with manageServer
+                - instance admin required when updating defaultOnSignup
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                name:
+                                    type: string
+                                description:
+                                    type: [string, "null"]
+                                isPublic:
+                                    type: boolean
+                                defaultOnSignup:
+                                    type: boolean
+                                    description: Instance-wide signup default toggle. Requires instance admin privileges and returns 403 for non-admin callers.
+                                iconFileId:
+                                    type: [string, "null"]
+                                bannerFileId:
+                                    type: [string, "null"]
+            responses:
+                "200":
+                    description: Updated server settings
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                required: [server]
+                                properties:
+                                    server:
+                                        $ref: "#/components/schemas/Server"
+                "400":
+                    description: Invalid settings payload
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "403":
+                    description: Missing permissions. Requires server management permission; defaultOnSignup updates additionally require instance admin.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Server not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/servers/{serverId}/stats:
+        get:
+            tags: [Servers]
+            summary: Get server statistics
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Server statistics
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ServerStats"
+
+    /api/servers/{serverId}/members:
+        get:
+            tags: [Servers, Moderation]
+            summary: List server members
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+                - name: limit
+                  in: query
+                  schema:
+                      type: integer
+                - name: cursor
+                  in: query
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Server members
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    members:
+                                        type: array
+                                        items:
+                                            $ref: "#/components/schemas/ServerMember"
+                                    nextCursor:
+                                        type: [string, "null"]
+                                    orphanCount:
+                                        type: integer
+                                        minimum: 0
+                                        description: Count of memberships whose profile could not be resolved at read time
+
+    /api/servers/{serverId}/permissions:
+        get:
+            tags: [Servers, Moderation]
+            summary: Get effective permissions for the current user in a server
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Effective permission set
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ServerPermissions"
+
+    /api/servers/{serverId}/mute:
+        post:
+            tags: [Moderation]
+            summary: Mute the current user at the server level
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Server mute updated
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/servers/{serverId}/moderation:
+        post:
+            tags: [Moderation]
+            summary: Execute a moderation action against a server member
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/ModerationRequest"
+            responses:
+                "200":
+                    description: Moderation action applied
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+                "403":
+                    description: Permission denied
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/servers/{serverId}/audit-logs:
+        get:
+            tags: [Moderation]
+            summary: Get audit logs for a server
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+                - name: limit
+                  in: query
+                  schema:
+                      type: integer
+                      default: 50
+            responses:
+                "200":
+                    description: Audit log entries
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                items:
+                                    $ref: "#/components/schemas/AuditLogEntry"
+
+    /api/servers/{serverId}/audit-logs/export:
+        get:
+            tags: [Moderation]
+            summary: Export server audit logs
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+                - name: format
+                  in: query
+                  schema:
+                      type: string
+                      enum: [csv, json]
+            responses:
+                "200":
+                    description: Audit export
+                    content:
+                        text/csv:
+                            schema:
+                                type: string
+                        application/json:
+                            schema:
+                                type: array
+                                items:
+                                    $ref: "#/components/schemas/AuditLogEntry"
+
+    /api/channels:
+        get:
+            tags: [Channels]
+            summary: List channels for a server
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+                - name: limit
+                  in: query
+                  required: false
+                  schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                - name: cursor
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Channel list
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    channels:
+                                        type: array
+                                        items:
+                                            $ref: "#/components/schemas/Channel"
+                                    nextCursor:
+                                        type: [string, "null"]
+        post:
+            tags: [Channels]
+            summary: Create a channel for a server
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/ChannelCreate"
+            responses:
+                "201":
+                    description: Channel created
+                    headers:
+                        Location:
+                            description: URL of the created channel
+                            schema:
+                                type: string
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                required:
+                                    - channel
+                                properties:
+                                    channel:
+                                        $ref: "#/components/schemas/Channel"
+
+    /api/channels/{channelId}:
+        patch:
+            tags: [Channels]
+            summary: Update channel category assignment, order, or name
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: channelId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                name:
+                                    type: string
+                                categoryId:
+                                    type: [string, "null"]
+                                position:
+                                    type: integer
+                                type:
+                                    type: string
+                                    enum: [announcement, text, voice]
+                                topic:
+                                    type: [string, "null"]
+            responses:
+                "200":
+                    description: Updated channel
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    channel:
+                                        $ref: "#/components/schemas/Channel"
+                "400":
+                    description: Invalid update payload
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "403":
+                    description: Permission denied
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Channel not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        delete:
+            tags: [Channels]
+            summary: Delete a channel
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: channelId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "204":
+                    description: Channel deleted successfully
+                "403":
+                    description: Permission denied
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Channel not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/categories:
+        get:
+            tags: [Channels]
+            summary: List channel categories for a server
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Category list
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    categories:
+                                        type: array
+                                        items:
+                                            $ref: "#/components/schemas/ChannelCategory"
+                "400":
+                    description: Missing or invalid serverId
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        post:
+            tags: [Channels]
+            summary: Create a new channel category
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [serverId, name]
+                            properties:
+                                serverId:
+                                    type: string
+                                name:
+                                    type: string
+            responses:
+                "201":
+                    description: Created category
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    category:
+                                        $ref: "#/components/schemas/ChannelCategory"
+                "403":
+                    description: Permission denied
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        put:
+            tags: [Channels]
+            summary: Rename or reorder a channel category
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [categoryId]
+                            properties:
+                                categoryId:
+                                    type: string
+                                name:
+                                    type: string
+                                position:
+                                    type: integer
+            responses:
+                "200":
+                    description: Updated category
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    category:
+                                        $ref: "#/components/schemas/ChannelCategory"
+                "400":
+                    description: Invalid update payload
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        delete:
+            tags: [Channels]
+            summary: Delete a channel category and return linked channels to uncategorized
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: categoryId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Category deleted
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+                "400":
+                    description: Missing categoryId
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/channels/{channelId}/pins:
+        get:
+            tags: [Channels, Messages]
+            summary: List pinned messages for a channel
+            description: Returns pinned channel messages with their existing message identifiers so clients can reopen the channel context and jump to the pinned message.
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: channelId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Pinned channel messages
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    messages:
+                                        type: array
+                                        items:
+                                            $ref: "#/components/schemas/Message"
+
+    /api/channels/{channelId}/mute:
+        post:
+            tags: [Channels]
+            summary: Mute a channel for the current user
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: channelId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Channel mute updated
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/messages:
+        post:
+            tags: [Messages]
+            summary: Create a channel message
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [channelId]
+                            properties:
+                                text:
+                                    type: string
+                                channelId:
+                                    type: string
+                                serverId:
+                                    type: string
+                                imageFileId:
+                                    type: string
+                                imageUrl:
+                                    type: string
+                                    format: uri
+                                replyToId:
+                                    type: string
+                                mentions:
+                                    type: array
+                                    items:
+                                        type: string
+                                attachments:
+                                    type: array
+                                    items:
+                                        $ref: "#/components/schemas/FileAttachment"
+            responses:
+                "200":
+                    description: Created message
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    message:
+                                        $ref: "#/components/schemas/Message"
+        patch:
+            tags: [Messages]
+            summary: Edit a channel message
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [messageId]
+                            properties:
+                                messageId:
+                                    type: string
+                                text:
+                                    type: string
+            responses:
+                "200":
+                    description: Updated message
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    message:
+                                        $ref: "#/components/schemas/Message"
+        delete:
+            tags: [Messages]
+            summary: Delete a channel message
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: messageId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Message deleted
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/messages/{messageId}/reactions:
+        post:
+            tags: [Messages, Emojis]
+            summary: Add or update a reaction on a channel message
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: messageId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [emoji]
+                            properties:
+                                emoji:
+                                    type: string
+                                emojiId:
+                                    type: string
+            responses:
+                "200":
+                    description: Reaction updated
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+        delete:
+            tags: [Messages, Emojis]
+            summary: Remove a reaction from a channel message
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: messageId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+                - name: emoji
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Reaction removed
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/messages/{messageId}/thread:
+        get:
+            tags: [Messages]
+            summary: List thread messages for a channel message
+            description: Returns the thread rooted at the specified channel message. Clients use the parent message identifier for consistent thread-entry and message-highlight navigation.
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: messageId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Thread message list
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    messages:
+                                        type: array
+                                        items:
+                                            $ref: "#/components/schemas/Message"
+        post:
+            tags: [Messages]
+            summary: Create a thread reply for a channel message
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: messageId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                text:
+                                    type: string
+                                attachments:
+                                    type: array
+                                    items:
+                                        $ref: "#/components/schemas/FileAttachment"
+            responses:
+                "201":
+                    description: Thread reply created
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    message:
+                                        $ref: "#/components/schemas/Message"
+
+    /api/messages/{messageId}/pin:
+        post:
+            tags: [Messages]
+            summary: Pin a channel message
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: messageId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Message pinned
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+        delete:
+            tags: [Messages]
+            summary: Unpin a channel message
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: messageId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Message unpinned
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/direct-messages:
+        get:
+            tags: [Direct Messages]
+            summary: List conversations, fetch or create a conversation, or list direct messages
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: type
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+                      enum: [conversations, conversation, messages]
+                - name: conversationId
+                  in: query
+                  schema:
+                      type: string
+                - name: userId1
+                  in: query
+                  schema:
+                      type: string
+                - name: userId2
+                  in: query
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Direct-message read result
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+        post:
+            tags: [Direct Messages]
+            summary: Create a direct message or conversation
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: Direct-message write result
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+        patch:
+            tags: [Direct Messages]
+            summary: Edit a direct message
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [messageId]
+                            properties:
+                                messageId:
+                                    type: string
+                                text:
+                                    type: string
+            responses:
+                "200":
+                    description: Updated direct message
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+        delete:
+            tags: [Direct Messages]
+            summary: Delete a direct message
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: messageId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Direct message deleted
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/direct-messages/{messageId}/reactions:
+        post:
+            tags: [Direct Messages, Emojis]
+            summary: Add or update a reaction on a direct message
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: messageId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [emoji]
+                            properties:
+                                emoji:
+                                    type: string
+                                emojiId:
+                                    type: string
+            responses:
+                "200":
+                    description: Reaction updated
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+        delete:
+            tags: [Direct Messages, Emojis]
+            summary: Remove a reaction from a direct message
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: messageId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+                - name: emoji
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Reaction removed
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/direct-messages/{messageId}/thread:
+        get:
+            tags: [Direct Messages]
+            summary: List thread messages for a direct message
+            description: Returns the thread rooted at the specified direct message. Clients use the parent message identifier for consistent thread-entry and message-highlight navigation.
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: messageId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Thread message list
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+        post:
+            tags: [Direct Messages]
+            summary: Create a thread reply for a direct message
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: messageId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                text:
+                                    type: string
+                                attachments:
+                                    type: array
+                                    items:
+                                        $ref: "#/components/schemas/FileAttachment"
+            responses:
+                "200":
+                    description: Thread reply created
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+
+    /api/direct-messages/{messageId}/pin:
+        post:
+            tags: [Direct Messages]
+            summary: Pin a direct message
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: messageId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Direct message pinned
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+        delete:
+            tags: [Direct Messages]
+            summary: Unpin a direct message
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: messageId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Direct message unpinned
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/conversations/{conversationId}/pins:
+        get:
+            tags: [Direct Messages]
+            summary: List pinned messages for a conversation
+            description: Returns pinned direct messages with the conversation context needed for consistent jump-to-message flows in DM chat.
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: conversationId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Pinned direct messages
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+
+    /api/conversations/{conversationId}/mute:
+        post:
+            tags: [Direct Messages]
+            summary: Mute a conversation for the current user
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: conversationId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Conversation mute updated
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/typing:
+        post:
+            tags: [Presence]
+            summary: Create or update typing state for a channel or conversation
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                channelId:
+                                    type: string
+                                conversationId:
+                                    type: string
+                                userName:
+                                    type: string
+            responses:
+                "200":
+                    description: Typing state written
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+        delete:
+            tags: [Presence]
+            summary: Clear typing state for the current user
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: channelId
+                  in: query
+                  schema:
+                      type: string
+                - name: conversationId
+                  in: query
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Typing state cleared
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/status:
+        get:
+            tags: [Presence]
+            summary: Get status for one user or a batch query string list
+            parameters:
+                - name: userId
+                  in: query
+                  schema:
+                      type: string
+                - name: userIds
+                  in: query
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Status payload
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: "#/components/schemas/StatusDocument"
+                                    - type: object
+                                      additionalProperties: true
+        post:
+            tags: [Presence]
+            summary: Create or update status
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/StatusDocument"
+            responses:
+                "200":
+                    description: Status written
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/StatusDocument"
+        patch:
+            tags: [Presence]
+            summary: Partially update status
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: Status updated
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/StatusDocument"
+        delete:
+            tags: [Presence]
+            summary: Remove a status record
+            parameters:
+                - name: userId
+                  in: query
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Status deleted
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/status/batch:
+        post:
+            tags: [Presence]
+            summary: Fetch status for multiple users
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [userIds]
+                            properties:
+                                userIds:
+                                    type: array
+                                    items:
+                                        type: string
+            responses:
+                "200":
+                    description: Batch status result
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+
+    /api/upload-image:
+        post:
+            tags: [Uploads]
+            summary: Upload an image for message use
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    multipart/form-data:
+                        schema:
+                            type: object
+                            properties:
+                                file:
+                                    type: string
+                                    format: binary
+            responses:
+                "200":
+                    description: Image uploaded
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    fileId:
+                                        type: string
+                                    fileUrl:
+                                        type: string
+                                        format: uri
+                                required: [fileId, fileUrl]
+                "400":
+                    description: Invalid upload request (missing file, unsupported type, or malformed body)
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "403":
+                    description: Forbidden - request origin is not allowed
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "413":
+                    description: File too large
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "429":
+                    description: Too many upload requests
+                    headers:
+                        Retry-After:
+                            schema:
+                                type: integer
+                            description: Seconds until another upload attempt is allowed.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        delete:
+            tags: [Uploads]
+            summary: Delete an uploaded image
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: fileId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Image deleted
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+                "400":
+                    description: Missing or invalid fileId
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "403":
+                    description: Forbidden - request origin is not allowed or caller does not own the file
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Image not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "429":
+                    description: Too many delete requests
+                    headers:
+                        Retry-After:
+                            schema:
+                                type: integer
+                            description: Seconds until another delete attempt is allowed.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/upload-file:
+        post:
+            tags: [Uploads]
+            summary: Upload a generic attachment
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    multipart/form-data:
+                        schema:
+                            type: object
+                            properties:
+                                file:
+                                    type: string
+                                    format: binary
+            responses:
+                "200":
+                    description: File uploaded
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    fileId:
+                                        type: string
+                                    fileName:
+                                        type: string
+                                    fileSize:
+                                        type: integer
+                                    fileType:
+                                        type: string
+                                    fileUrl:
+                                        type: string
+                                        format: uri
+                                    downloadUrl:
+                                        type: string
+                                        format: uri
+                                    category:
+                                        type: string
+                                        description: Derived attachment category based on validated MIME type
+                                        enum:
+                                            - documents
+                                            - images
+                                            - videos
+                                            - audio
+                                            - archives
+                                            - code
+                                        example: images
+                                required: [fileId, fileName, fileSize, fileUrl]
+                "400":
+                    description: Invalid upload payload or unsupported file type
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Authentication required
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "403":
+                    description: Forbidden - request origin not allowed
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "413":
+                    description: File too large
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "429":
+                    description: Too Many Requests
+                    headers:
+                        Retry-After:
+                            schema:
+                                type: integer
+                            description: Seconds until another upload attempt is allowed.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        delete:
+            tags: [Uploads]
+            summary: Delete an uploaded attachment
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: fileId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: File deleted
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+                "400":
+                    description: Missing or invalid fileId
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "403":
+                    description: Forbidden — caller does not own the file
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: File not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "429":
+                    description: Too many delete requests
+                    headers:
+                        Retry-After:
+                            schema:
+                                type: integer
+                            description: Seconds until another delete attempt is allowed.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/custom-emojis:
+        get:
+            tags: [Emojis]
+            summary: List custom emojis available to the client
+            security:
+                - sessionCookie: []
+            responses:
+                "200":
+                    description: Custom emoji list
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    emojis:
+                                        type: array
+                                        items:
+                                            type: object
+                                            additionalProperties: true
+
+    /api/upload-emoji:
+        post:
+            tags: [Uploads, Emojis]
+            summary: Upload a custom emoji asset
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    multipart/form-data:
+                        schema:
+                            type: object
+                            properties:
+                                file:
+                                    type: string
+                                    format: binary
+                                name:
+                                    type: string
+            responses:
+                "200":
+                    description: Emoji uploaded
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+        delete:
+            tags: [Uploads, Emojis]
+            summary: Delete a custom emoji asset
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: fileId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Emoji deleted
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/emoji/{fileId}:
+        get:
+            tags: [Emojis]
+            summary: Proxy or retrieve a custom emoji asset
+            security: []
+            parameters:
+                - name: fileId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Emoji asset stream
+                    content:
+                        image/*:
+                            schema:
+                                type: string
+                                format: binary
+
+    /api/search/messages:
+        get:
+            tags: [Search]
+            summary: Search messages across accessible contexts
+            description: Returns message matches with enough channel or conversation context for the client to deep-link into the correct chat surface and highlight the selected message.
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: query
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+                - name: limit
+                  in: query
+                  schema:
+                      type: integer
+            responses:
+                "200":
+                    description: Search results
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+
+    /api/users/search:
+        get:
+            tags: [Search, Users]
+            summary: Search users for discovery or mention autocomplete
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: query
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: User search results
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    users:
+                                        type: array
+                                        items:
+                                            $ref: "#/components/schemas/UserSummary"
+
+    /api/profile/{userId}:
+        get:
+            tags: [Users]
+            summary: Get profile data by user identifier
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: User profile
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/UserProfile"
+
+    /api/users/{userId}/profile:
+        get:
+            tags: [Users]
+            summary: Get enriched profile data by user identifier
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Enriched user profile
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/UserProfile"
+
+    /api/profiles/batch:
+        post:
+            tags: [Users]
+            summary: Resolve multiple profiles in a single request
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [userIds]
+                            properties:
+                                userIds:
+                                    type: array
+                                    items:
+                                        type: string
+            responses:
+                "200":
+                    description: Batch profile result
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+
+    /api/memberships:
+        get:
+            tags: [Users, Servers]
+            summary: List memberships for the current user
+            security:
+                - sessionCookie: []
+            responses:
+                "200":
+                    description: Membership list
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                additionalProperties: true
+
+    /api/notifications/settings:
+        get:
+            tags: [Notifications]
+            summary: Get notification settings for the current user
+            security:
+                - sessionCookie: []
+            responses:
+                "200":
+                    description: Notification settings
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/NotificationSettings"
+        patch:
+            tags: [Notifications]
+            summary: Update notification settings for the current user
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/NotificationSettings"
+            responses:
+                "200":
+                    description: Notification settings updated
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/NotificationSettings"
+
+    /api/inbox:
+        get:
+            tags: [Notifications]
+            summary: Get unified unread inbox items and counts
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: kind
+                  in: query
+                  description: Comma-separated list of inbox kinds
+                  schema:
+                      type: string
+                      example: mention,thread
+                - name: scope
+                  in: query
+                  description: Context scope filter for inbox results
+                  schema:
+                      type: string
+                      enum: [all, direct, server]
+                      default: all
+                - name: limit
+                  in: query
+                  schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                - name: contextId
+                  in: query
+                  required: false
+                  description: Context identifier. Must be provided together with contextKind for context-scoped inbox responses.
+                  schema:
+                      type: string
+                - name: contextKind
+                  in: query
+                  required: false
+                  description: Context discriminator. Must be provided together with contextId.
+                  schema:
+                      type: string
+                      enum: [channel, conversation]
+            responses:
+                "200":
+                    description: Inbox list response. When both contextId and contextKind are provided, returns the context-scoped variant.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/InboxResponse"
+                "400":
+                    description: Invalid query parameters
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        patch:
+            tags: [Notifications]
+            summary: Mark inbox items or contexts as read
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            oneOf:
+                                - type: object
+                                  required: [itemIds]
+                                  properties:
+                                      itemIds:
+                                          type: array
+                                          minItems: 1
+                                          maxItems: 50
+                                          items:
+                                              type: string
+                                - type: object
+                                  required: [action]
+                                  properties:
+                                      action:
+                                          type: string
+                                          enum: [mark-all-read]
+                                      contextKind:
+                                          type: string
+                                          enum: [channel, conversation]
+                                      contextId:
+                                          type: string
+            responses:
+                "200":
+                    description: Read state updated
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - type: object
+                                      description: Response for itemIds-based read updates.
+                                      properties:
+                                          ok:
+                                              type: boolean
+                                          readAt:
+                                              type: string
+                                              format: date-time
+                                          updatedCount:
+                                              type: integer
+                                          truncated:
+                                              type: boolean
+                                          truncatedCount:
+                                              type: integer
+                                    - type: object
+                                      description: Response for mark-all-read updates.
+                                      properties:
+                                          ok:
+                                              type: boolean
+                                          readAt:
+                                              type: string
+                                              format: date-time
+                                          updatedMentionCount:
+                                              type: integer
+                                          updatedThreadContextCount:
+                                              type: integer
+                "400":
+                    description: Invalid request body
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/inbox/digest:
+        get:
+            tags: [Notifications]
+            summary: Get scoped unread digest payload
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: limit
+                  in: query
+                  schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                - name: contextKind
+                  in: query
+                  schema:
+                      type: string
+                      enum: [channel, conversation]
+                - name: contextId
+                  in: query
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Inbox digest response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/InboxDigestResponse"
+                "400":
+                    description: Invalid query parameters
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/thread-reads:
+        get:
+            tags: [Notifications]
+            summary: Get persisted thread read state for a context
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: contextId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+                - name: contextKind
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+                      enum: [channel, conversation]
+            responses:
+                "200":
+                    description: Thread reads response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ThreadReadsResponse"
+                "400":
+                    description: Invalid query parameters
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        patch:
+            tags: [Notifications]
+            summary: Persist thread read state updates for a context
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/ThreadReadsPatchRequest"
+            responses:
+                "200":
+                    description: Thread reads updated
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ThreadReadsResponse"
+                "400":
+                    description: Invalid request body
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/roles:
+        get:
+            tags: [Roles]
+            summary: List roles for a server
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Role list
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    roles:
+                                        type: array
+                                        items:
+                                            $ref: "#/components/schemas/Role"
+        post:
+            tags: [Roles]
+            summary: Create a role
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/Role"
+            responses:
+                "201":
+                    description: Role created
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Role"
+        put:
+            tags: [Roles]
+            summary: Update a role
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/Role"
+            responses:
+                "200":
+                    description: Role updated
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Role"
+        delete:
+            tags: [Roles]
+            summary: Delete a role
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: roleId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Role deleted
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/role-assignments:
+        get:
+            tags: [Roles]
+            summary: List role assignments by server, role, or user
+            description: >-
+                Requests with userId return the raw role assignment array for
+                compatibility. Server and role lookups continue to return the
+                object form with assignments and truncated.
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: query
+                  schema:
+                      type: string
+                - name: roleId
+                  in: query
+                  schema:
+                      type: string
+                - name: userId
+                  in: query
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Role assignments
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - type: array
+                                      items:
+                                          $ref: "#/components/schemas/RoleAssignment"
+                                    - type: object
+                                      properties:
+                                          assignments:
+                                              type: array
+                                              items:
+                                                  $ref: "#/components/schemas/RoleAssignment"
+                                          truncated:
+                                              type: boolean
+                                      required:
+                                          - assignments
+                                          - truncated
+        post:
+            tags: [Roles]
+            summary: Assign a role to a user
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/RoleAssignment"
+            responses:
+                "201":
+                    description: Role assigned
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/RoleAssignment"
+        delete:
+            tags: [Roles]
+            summary: Remove a role assignment from a user
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: userId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+                - name: serverId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+                - name: roleId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Role assignment removed
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/channel-permissions:
+        get:
+            tags: [Roles, Channels]
+            summary: List channel permission overrides
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: channelId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Channel permission overrides
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    overrides:
+                                        type: array
+                                        items:
+                                            $ref: "#/components/schemas/ChannelPermissionOverride"
+        post:
+            tags: [Roles, Channels]
+            summary: Create a channel permission override
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/ChannelPermissionOverride"
+            responses:
+                "201":
+                    description: Override created
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ChannelPermissionOverride"
+        put:
+            tags: [Roles, Channels]
+            summary: Update a channel permission override
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/ChannelPermissionOverride"
+            responses:
+                "200":
+                    description: Override updated
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ChannelPermissionOverride"
+        delete:
+            tags: [Roles, Channels]
+            summary: Delete a channel permission override
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: overrideId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Override deleted
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/servers/{serverId}/invites:
+        get:
+            tags: [Invites]
+            summary: List invites for a server
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Server invites
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                items:
+                                    $ref: "#/components/schemas/Invite"
+        post:
+            tags: [Invites]
+            summary: Create an invite for a server
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                channelId:
+                                    type: string
+                                expiresAt:
+                                    type: string
+                                    format: date-time
+                                maxUses:
+                                    type: integer
+                                temporary:
+                                    type: boolean
+            responses:
+                "200":
+                    description: Created invite
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Invite"
+
+    /api/invites/{code}:
+        get:
+            tags: [Invites]
+            summary: Get a public invite preview
+            security: []
+            parameters:
+                - name: code
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Invite preview
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    invite:
+                                        $ref: "#/components/schemas/Invite"
+                                    server:
+                                        $ref: "#/components/schemas/ServerPreview"
+                "404":
+                    description: Invite or server not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        delete:
+            tags: [Invites]
+            summary: Revoke an invite
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: code
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Invite revoked
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/invites/{code}/join:
+        post:
+            tags: [Invites, Servers]
+            summary: Redeem an invite and join its server
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: code
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Invite redeemed
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+
+    /api/feature-flags/allow-user-servers:
+        get:
+            tags: [Feature Flags]
+            summary: Get the client-visible allow-user-servers flag
+            security: []
+            responses:
+                "200":
+                    description: Flag state
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/FeatureFlagState"
