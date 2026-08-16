@@ -92,14 +92,14 @@ const nextConfig: NextConfig = {
             process.env.APPWRITE_PROJECT_ID,
     },
 
-    /*compiler: {
+    compiler: {
         removeConsole:
             process.env.NODE_ENV === "production"
                 ? {
                       exclude: ["error", "warn"],
                   }
                 : false,
-    }, */
+    },
 
     // Moved from experimental in Next.js 16
     cacheComponents: true,
