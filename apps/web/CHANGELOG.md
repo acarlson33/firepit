@@ -5,6 +5,79 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] - 2026-08-15
+
+### 🐛 Fixes
+
+- **Offline banner** - When your connection drops, a clear banner now appears instead of requests failing silently
+- **More reliable API handling** - Reworked response parsing and error handling across API routes for consistent, clearer error messages
+
+### ⚙️ Improvements
+
+- **Connectivity-aware loading** - Screens show clearer loading states while data fetches
+- **Faster profile loads** - Improved profile prefetching so profiles appear sooner
+- **Better observability** - Added New Relic instrumentation for faster monitoring and issue diagnosis
+- **Stronger reliability** - Added integration tests for auth/session and core API routes to prevent regressions
+
+## [2.0.0] - 2026-05-21
+
+### ✨ Features
+
+- **Monorepo migration** - Split the project into `apps/web` and `apps/mobile` workspaces with shared tooling
+- **Mobile-ready APIs** - Added and reworked endpoints (message listing, sessions) to power the React Native app
+- **Improved auth sessions** - Session handling changes to reduce unnecessary re-authentication
+
+### Build and Infrastructure
+
+- **Web CI** - GitHub Actions for web build and test
+- **PostHog logging** - Enhanced event logging across API routes
+- **Repo Relocation** - Relocate Repo to new github organization for future work.
+
+### Bug Fixes
+
+- Various API bugs surfaced during the mobile build-out
+
+## [1.9.0] - 2026-05-13
+
+### ✨ Features
+
+- **UI overhaul** - Redesigned and polished core chat UI
+- **Faster DM loading** - Performance improvements in direct message loading
+- **Realtime improvements** - Better subscription lifecycle management
+- **Cursor-based pagination** - Public server listing now paginates with cursors
+
+### Build and Infrastructure
+
+- **Mobile app prerequisites** - API groundwork for the upcoming mobile app
+
+### Bug Fixes
+
+- **Rate limit & CORS handling** - Improved middleware error handling and response management
+
+## [1.8.1] - 2026-05-06
+
+### Bug Fixes
+
+- Updated dependencies to latest versions for improved stability and performance
+
+## [1.8.0] - 2026-05-05
+
+### ✨ Features
+
+- **GIF & sticker support** - Share GIFs and stickers with improved file naming and MIME type inference
+- **System announcements** - Instance-wide announcements with dispatching and caching
+- **Email verification** - Verify email addresses during and after signup
+- **Polls in messages** - Create and vote on polls in channels
+- **Server discovery & customization** - Improved public server browsing and customization
+- **Markdown support** - Basic Markdown rendering in messages
+- **Channel deletion** - Delete channels with proper permission and error handling
+
+### Bug Fixes
+
+- **Notification settings cache invalidation** - Fixed stale notification preferences
+- **Conversation caching** - Fixed duplicate idempotency key handling and improved DM caching
+- Various error-handling and API response structure improvements
+
 ## [1.7.0] - 2026-03-29
 
 ### ⚠️ Breaking Changes
@@ -164,29 +237,10 @@ Built with ❤️ using:
 - React Query for state management
 - Vitest for testing
 
----
-
-## Release Notes
-
-### What's Next?
-
-See [ROADMAP.md](./ROADMAP.md) for upcoming features including:
-
-- Server invite system (v1.1)
-- File attachment improvements (v1.1)
-- Message threading (v1.2)
-- Message pinning (v1.2)
-- Friend system and user blocking (v1.3)
-
-### Upgrading
-
-This is the first release. For future upgrades, see the [DEPLOYMENT.md](./DEPLOYMENT.md) guide.
-
-### Support
-
-- **Issues**: [GitHub Issues](https://github.com/acarlson33/firepit/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/acarlson33/firepit/discussions)
-- **Documentation**: See `/docs` folder
-
+[2.0.3]: https://github.com/firepit-chat/firepit/releases/tag/v2.0.3
+[2.0.0]: https://github.com/firepit-chat/firepit/releases/tag/v2.0.0
+[1.9.0]: https://github.com/acarlson33/firepit/releases/tag/v1.9.0
+[1.8.1]: https://github.com/acarlson33/firepit/releases/tag/v1.8.1
+[1.8.0]: https://github.com/acarlson33/firepit/releases/tag/v1.8.0
 [1.7.0]: https://github.com/acarlson33/firepit/releases/tag/v1.7.0
 [1.0.0]: https://github.com/acarlson33/firepit/releases/tag/v1.0.0

@@ -1,6 +1,12 @@
 import { execSync } from "node:child_process";
 import { platform } from "node:os";
-import { appendFileSync, copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+    appendFileSync,
+    copyFileSync,
+    existsSync,
+    readFileSync,
+    writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import { ensureEnv } from "./env";
@@ -12,28 +18,30 @@ const VALID_ARCHES = ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"] as const;
 type Arch = (typeof VALID_ARCHES)[number];
 
 function parseArgs(): { arch: Arch | null } {
-  const args = process.argv.slice(2);
-  const archIndex = args.indexOf("--arch");
-  if (archIndex === -1) return { arch: null };
-  if (archIndex + 1 >= args.length) {
-    console.error(
-      `--arch requires a value. Valid: ${VALID_ARCHES.join(", ")}`,
-    );
-    process.exit(1);
-  }
-  const arch = args[archIndex + 1];
-  if (!VALID_ARCHES.includes(arch as Arch)) {
-    console.error(`Invalid arch "${arch}". Valid: ${VALID_ARCHES.join(", ")}`);
-    process.exit(1);
-  }
-  return { arch: arch as Arch };
+    const args = process.argv.slice(2);
+    const archIndex = args.indexOf("--arch");
+    if (archIndex === -1) return { arch: null };
+    if (archIndex + 1 >= args.length) {
+        console.error(
+            `--arch requires a value. Valid: ${VALID_ARCHES.join(", ")}`,
+        );
+        process.exit(1);
+    }
+    const arch = args[archIndex + 1];
+    if (!VALID_ARCHES.includes(arch as Arch)) {
+        console.error(
+            `Invalid arch "${arch}". Valid: ${VALID_ARCHES.join(", ")}`,
+        );
+        process.exit(1);
+    }
+    return { arch: arch as Arch };
 }
 
 function addAbiSplits(gradlePath: string, arch: Arch | null) {
-  let gradle = readFileSync(gradlePath, "utf-8");
+    let gradle = readFileSync(gradlePath, "utf-8");
 
-  const splitsBlock = arch
-    ? `    splits {
+    const splitsBlock = arch
+        ? `    splits {
         abi {
             enable true
             reset()
@@ -42,7 +50,7 @@ function addAbiSplits(gradlePath: string, arch: Arch | null) {
         }
     }
 `
-    : `    splits {
+        : `    splits {
         abi {
             enable true
             reset()
@@ -52,24 +60,27 @@ function addAbiSplits(gradlePath: string, arch: Arch | null) {
     }
 `;
 
-  if (gradle.includes("splits {")) {
-    gradle = gradle.replace(/^ {4}splits \{[\s\S]*?^ {4}\}\n/m, splitsBlock);
-  } else {
-    gradle = gradle.replace(
-      /(^ {4}externalNativeBuild \{[\s\S]*?^ {4}\}\n)(\})/m,
-      `$1${splitsBlock}$2`,
-    );
-  }
+    if (gradle.includes("splits {")) {
+        gradle = gradle.replace(
+            /^ {4}splits \{[\s\S]*?^ {4}\}\n/m,
+            splitsBlock,
+        );
+    } else {
+        gradle = gradle.replace(
+            /(^ {4}externalNativeBuild \{[\s\S]*?^ {4}\}\n)(\})/m,
+            `$1${splitsBlock}$2`,
+        );
+    }
 
-  writeFileSync(gradlePath, gradle);
+    writeFileSync(gradlePath, gradle);
 }
 
 function androidBuild() {
     const { arch } = parseArgs();
     if (arch) {
-      console.log(`Building for arch: ${arch}`);
+        console.log(`Building for arch: ${arch}`);
     } else {
-      console.log("Building universal APK (all ABIs)");
+        console.log("Building universal APK (all ABIs)");
     }
 
     console.log(
@@ -105,7 +116,7 @@ function androidBuild() {
     let props = readFileSync(propsPath, "utf-8");
     props = props.replace(
         /^org\.gradle\.jvmargs=.*$/m,
-        "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=512m",
+        "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m",
     );
     if (props.length > 0 && !props.endsWith("\n")) props += "\n";
     if (!props.includes("org.gradle.caching=")) {
@@ -192,8 +203,8 @@ function androidBuild() {
 
     console.log("Copying keystore...");
     copyFileSync(
-      "credentials/android/firepit-upload.keystore",
-      "android/app/firepit-upload.keystore",
+        "credentials/android/firepit-upload.keystore",
+        "android/app/firepit-upload.keystore",
     );
 
     console.log("Adding release signing config and switching to it...");
@@ -240,19 +251,27 @@ function androidBuild() {
 
     console.log("Copying APK to project root...");
     const apkSuffix = arch ? `-${arch}-release.apk` : "-universal-release.apk";
-    const apkName = arch
-      ? `firepit-${arch}.apk`
-      : "firepit-universal.apk";
-    const apkSource = join("android", "app", "build", "outputs", "apk", "release", `app${apkSuffix}`);
+    const apkName = arch ? `firepit-${arch}.apk` : "firepit-universal.apk";
+    const apkSource = join(
+        "android",
+        "app",
+        "build",
+        "outputs",
+        "apk",
+        "release",
+        `app${apkSuffix}`,
+    );
     const apkDest = join("..", "..", apkName);
     if (existsSync(apkSource)) {
-      copyFileSync(apkSource, apkDest);
-      console.log(`APK saved to ${apkDest}`);
+        copyFileSync(apkSource, apkDest);
+        console.log(`APK saved to ${apkDest}`);
     } else {
-      console.error(`APK not found at ${apkSource}. Built artifacts:`);
-      // Fallback: list what was built
-      execSync("ls -la android/app/build/outputs/apk/release/", { stdio: "inherit" });
-      process.exit(1);
+        console.error(`APK not found at ${apkSource}. Built artifacts:`);
+        // Fallback: list what was built
+        execSync("ls -la android/app/build/outputs/apk/release/", {
+            stdio: "inherit",
+        });
+        process.exit(1);
     }
 
     console.log("Returning to project root...");
